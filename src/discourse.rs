@@ -3,7 +3,7 @@ use crate::utils::normalize_baseurl;
 use anyhow::{Context, Result, anyhow};
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{HeaderMap, HeaderValue};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
@@ -558,6 +558,8 @@ pub struct CategoryInfo {
     #[serde(default)]
     pub text_color: Option<String>,
     pub id: Option<u64>,
+    #[serde(default)]
+    pub subcategory_list: Vec<CategoryInfo>,
 }
 
 /// Response payload for categories.json.
@@ -608,7 +610,7 @@ pub struct GroupDetailResponse {
 }
 
 /// Group details with settings used for deep-copy.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct GroupDetail {
     pub id: u64,
     pub name: String,

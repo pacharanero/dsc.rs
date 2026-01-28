@@ -1,8 +1,8 @@
 use anyhow::{Context, Result, anyhow};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
-use clap_complete::{generate, shells::{Bash, Fish, Zsh}};
+use clap_complete::{generate, Shell};
 use dsc::config::{Config, DiscourseConfig, find_discourse, load_config, save_config};
-use dsc::discourse::{DiscourseClient, TopicSummary};
+use dsc::discourse::{CategoryInfo, DiscourseClient, TopicSummary};
 use dsc::utils::{ensure_dir, read_markdown, resolve_topic_path, slugify, write_markdown};
 use std::fs;
 use std::io::{self, Read, Write};
@@ -170,11 +170,21 @@ enum BackupCommand {
     },
 }
 
-#[derive(ValueEnum, Clone)]
+#[derive(ValueEnum, Clone, Copy)]
 enum CompletionShell {
     Bash,
     Zsh,
     Fish,
+}
+
+impl From<CompletionShell> for Shell {
+    fn from(value: CompletionShell) -> Self {
+        match value {
+            CompletionShell::Bash => Shell::Bash,
+            CompletionShell::Zsh => Shell::Zsh,
+            CompletionShell::Fish => Shell::Fish,
+        }
+    }
 }
 
 #[derive(ValueEnum, Clone)]
@@ -321,20 +331,14 @@ fn write_completions(shell: CompletionShell, dir: Option<&Path>) -> Result<()> {
             let path = dir.join(filename);
             let mut file =
                 fs::File::create(&path).with_context(|| format!("creating {}", path.display()))?;
-            match shell {
-                CompletionShell::Bash => generate(Bash, &mut cmd, name, &mut file),
-                CompletionShell::Zsh => generate(Zsh, &mut cmd, name, &mut file),
-                CompletionShell::Fish => generate(Fish, &mut cmd, name, &mut file),
-            };
+            let generator: Shell = shell.into();
+            generate(generator, &mut cmd, name, &mut file);
             println!("{}", path.display());
         }
         None => {
             let mut stdout = io::stdout();
-            match shell {
-                CompletionShell::Bash => generate(Bash, &mut cmd, name, &mut stdout),
-                CompletionShell::Zsh => generate(Zsh, &mut cmd, name, &mut stdout),
-                CompletionShell::Fish => generate(Fish, &mut cmd, name, &mut stdout),
-            };
+            let generator: Shell = shell.into();
+            generate(generator, &mut cmd, name, &mut stdout);
         }
     }
     Ok(())
@@ -766,11 +770,28 @@ fn category_list(
     let discourse = select_discourse(config, merge_discourse_name(discourse_name, discourse_flag))?;
     let client = DiscourseClient::new(discourse)?;
     let categories = client.fetch_categories()?;
+    let mut flat = Vec::new();
     for category in categories {
+        flatten_categories(&category, &mut flat);
+    }
+    let mut seen = std::collections::HashSet::new();
+    for category in flat {
+        if let Some(id) = category.id {
+            if !seen.insert(id) {
+                continue;
+            }
+        }
         let id = category.id.unwrap_or_default();
         println!("{} - {}", id, category.name);
     }
     Ok(())
+}
+
+fn flatten_categories(category: &CategoryInfo, out: &mut Vec<CategoryInfo>) {
+    out.push(category.clone());
+    for sub in &category.subcategory_list {
+        flatten_categories(sub, out);
+    }
 }
 
 fn category_copy(
