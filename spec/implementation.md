@@ -2,7 +2,9 @@
 
 ## Agents
 
-* Run tests after all code changes and ensure tests pass
+- Run tests after all code changes and ensure tests pass.
+- Make regular commits with clear messages reflecting progress.
+- Keep documents in spec/ up to date with any changes or decisions made during implementation.
 
 ## Source Spec
 
@@ -30,10 +32,6 @@
   - Deletes any test data created on the test forum, at the end of testing.
 - Test Discourse credentials/config will be provided in `testdsc.toml`.
 - Tests should be organised in a modular fashion within the `tests/` directory.
-
-## Git
-
-- Make regular commits with clear messages reflecting progress.
 
 ## Configuration Files
 
