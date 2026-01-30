@@ -33,6 +33,8 @@ pub struct DiscourseConfig {
     pub name: String,
     pub baseurl: String,
     #[serde(default, deserialize_with = "deserialize_opt_string_empty_as_none")]
+    pub fullname: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_opt_string_empty_as_none")]
     pub apikey: Option<String>,
     #[serde(default, deserialize_with = "deserialize_opt_string_empty_as_none")]
     pub api_username: Option<String>,

@@ -40,6 +40,7 @@ Most functionality is provided through interactions with the Discourse REST API,
 ```toml
 [[discourse]]
 name = "myforum"
+fullname = "My Forum"
 baseurl = "https://forum.example.com"
 apikey = "your_api_key_here"
 api_username = "system"
@@ -50,6 +51,7 @@ ssh_host = "forum.example.com"
 Notes:
 
 - `baseurl` should not end with a trailing slash.
+- `fullname` is the Discourse site title (auto-populated when adding/importing if it can be fetched).
 - `ssh_host` enables `update` over SSH (`./launcher rebuild app`). Configure keys in your SSH config.
 - `changelog_topic_id` is required if you want `--post-changelog` to post a checklist update.
 - `tags` (optional) can label installs; they are emitted in list output formats.

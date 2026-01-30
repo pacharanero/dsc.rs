@@ -30,6 +30,11 @@ List formats:
 - `yaml` | `yml`
 - `csv`
 
+### `dsc list tidy`
+
+Orders the `dsc.toml` file entries alphabetically by name.
+Collects any missing full names by querying the Discourse URLs.
+
 ### `dsc add <name>,<name>,... [--interactive]`
 
 Adds one or more Discourses to `dsc.toml`, creating one entry per name.
@@ -53,7 +58,7 @@ Supported formats:
 
 If `<path>` is omitted, input is read from stdin.
 
-`dsc` will attempt to populate the name field by querying the Discourse URL for the site title.
+`dsc` will attempt to populate the name and fullname fields by querying the Discourse URL for the site title.
 
 ### `dsc update <name|all> [--post-changelog] [--concurrent] [--max <n>]`
 
@@ -214,11 +219,13 @@ dsc.toml is the configuration file used by dsc.rs to keep track of Discourse ins
 ```toml
 [[discourse]]
 name = "myforum"
+fullname = "My Forum"
 baseurl = "https://forum.example.com"
 
 # Optional fields
 apikey = "your_api_key_here"
 api_username = "system"
+fullname = "My Forum" # Discourse site title (optional)
 changelog_path = "path/to/changelog.md"
 changelog_topic_id = 123
 ssh_host = "myforum" # optional SSH config host name used for updates

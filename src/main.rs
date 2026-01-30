@@ -1,7 +1,7 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
-use clap_complete::{Shell, generate};
-use dsc::config::{Config, DiscourseConfig, find_discourse, load_config, save_config};
+use clap_complete::{generate, Shell};
+use dsc::config::{find_discourse, load_config, save_config, Config, DiscourseConfig};
 use dsc::discourse::{CategoryInfo, DiscourseClient, TopicSummary};
 use dsc::utils::{ensure_dir, read_markdown, resolve_topic_path, slugify, write_markdown};
 use std::fs;
@@ -21,6 +21,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    #[command(visible_alias = "ls")]
     List {
         #[arg(long, short = 'f', value_enum, default_value = "plaintext")]
         format: OutputFormat,
@@ -344,6 +345,9 @@ fn list_tidy(config_path: &Path, config: &mut Config) -> Result<()> {
         if d.ssh_host.is_none() {
             d.ssh_host = Some("".to_string());
         }
+        if d.fullname.is_none() && !d.baseurl.trim().is_empty() {
+            d.fullname = fetch_fullname_from_url(&d.baseurl);
+        }
     }
 
     // Sort ascending alphanumeric by name (case-insensitive, with a stable tie-break).
@@ -397,19 +401,30 @@ fn list_discourses(config: &Config, format: OutputFormat) -> Result<()> {
     match format {
         OutputFormat::Plaintext => {
             for d in &config.discourse {
-                println!("{} - {}", d.name, d.baseurl);
+                let fullname = d.fullname.as_deref().unwrap_or("");
+                if fullname.is_empty() {
+                    println!("{} - {}", d.name, d.baseurl);
+                } else {
+                    println!("{} - {} - {}", d.name, fullname, d.baseurl);
+                }
             }
         }
         OutputFormat::Markdown => {
             for d in &config.discourse {
-                println!("- {} ({})", d.name, d.baseurl);
+                let fullname = d.fullname.as_deref().unwrap_or("");
+                if fullname.is_empty() {
+                    println!("- {} ({})", d.name, d.baseurl);
+                } else {
+                    println!("- {} ({}) - {}", d.name, fullname, d.baseurl);
+                }
             }
         }
         OutputFormat::MarkdownTable => {
-            println!("| Name | Base URL |");
-            println!("| --- | --- |");
+            println!("| Name | Full Name | Base URL |");
+            println!("| --- | --- | --- |");
             for d in &config.discourse {
-                println!("| {} | {} |", d.name, d.baseurl);
+                let fullname = d.fullname.as_deref().unwrap_or("");
+                println!("| {} | {} | {} |", d.name, fullname, d.baseurl);
             }
         }
         OutputFormat::Json => {
@@ -422,10 +437,11 @@ fn list_discourses(config: &Config, format: OutputFormat) -> Result<()> {
         }
         OutputFormat::Csv => {
             let mut writer = csv::Writer::from_writer(io::stdout());
-            writer.write_record(["name", "baseurl", "tags"])?;
+            writer.write_record(["name", "fullname", "baseurl", "tags"])?;
             for d in &config.discourse {
                 let tags = d.tags.as_ref().map(|t| t.join(";")).unwrap_or_default();
-                writer.write_record([d.name.as_str(), d.baseurl.as_str(), &tags])?;
+                let fullname = d.fullname.as_deref().unwrap_or("");
+                writer.write_record([d.name.as_str(), fullname, d.baseurl.as_str(), &tags])?;
             }
             writer.flush()?;
         }
@@ -466,6 +482,9 @@ fn add_discourses(config: &mut Config, names: &str, interactive: bool) -> Result
                     .filter(|tag| !tag.is_empty())
                     .collect::<Vec<_>>()
             });
+            if !entry.baseurl.trim().is_empty() {
+                entry.fullname = fetch_fullname_from_url(&entry.baseurl);
+            }
         }
         config.discourse.push(entry);
     }
@@ -505,10 +524,16 @@ fn import_text(config: &mut Config, raw: &str) -> Result<()> {
         if url.is_empty() {
             continue;
         }
-        let name = fetch_name_from_url(url).unwrap_or_else(|_| slugify(url));
+        let fullname = fetch_fullname_from_url(url);
+        let name = if let Some(title) = fullname.as_deref() {
+            slugify(title)
+        } else {
+            slugify(url)
+        };
         config.discourse.push(DiscourseConfig {
             name,
             baseurl: url.to_string(),
+            fullname,
             ..DiscourseConfig::default()
         });
     }
@@ -524,8 +549,13 @@ fn import_csv(config: &mut Config, raw: &str) -> Result<()> {
         if url.is_empty() {
             continue;
         }
+        let fullname = fetch_fullname_from_url(url);
         let name = if name.is_empty() {
-            fetch_name_from_url(url).unwrap_or_else(|_| slugify(url))
+            if let Some(title) = fullname.as_deref() {
+                slugify(title)
+            } else {
+                slugify(url)
+            }
         } else {
             name.to_string()
         };
@@ -533,6 +563,7 @@ fn import_csv(config: &mut Config, raw: &str) -> Result<()> {
         config.discourse.push(DiscourseConfig {
             name,
             baseurl: url.to_string(),
+            fullname,
             tags,
             ..DiscourseConfig::default()
         });
@@ -554,15 +585,33 @@ fn parse_tags(raw: &str) -> Vec<String> {
         .collect()
 }
 
-fn fetch_name_from_url(baseurl: &str) -> Result<String> {
+fn fetch_fullname_from_url(baseurl: &str) -> Option<String> {
     let temp = DiscourseConfig {
         name: "temp".to_string(),
         baseurl: baseurl.to_string(),
         ..DiscourseConfig::default()
     };
-    let client = DiscourseClient::new(&temp)?;
-    let title = client.fetch_site_title()?;
-    Ok(slugify(&title))
+    let client = match DiscourseClient::new(&temp) {
+        Ok(client) => client,
+        Err(err) => {
+            println!("Failed to query site title for {}: {}", baseurl, err);
+            return None;
+        }
+    };
+    match client.fetch_site_title() {
+        Ok(title) => {
+            let title = title.trim().to_string();
+            if title.is_empty() {
+                None
+            } else {
+                Some(title)
+            }
+        }
+        Err(err) => {
+            println!("Failed to query site title for {}: {}", baseurl, err);
+            None
+        }
+    }
 }
 
 fn update_one(config: &Config, name: &str, post_changelog: bool) -> Result<()> {
