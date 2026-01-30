@@ -43,6 +43,9 @@ _dsc() {
             dsc,list)
                 cmd="dsc__list"
                 ;;
+            dsc,ls)
+                cmd="dsc__list"
+                ;;
             dsc,topic)
                 cmd="dsc__topic"
                 ;;
@@ -109,11 +112,17 @@ _dsc() {
             dsc__emoji,help)
                 cmd="dsc__emoji__help"
                 ;;
+            dsc__emoji,list)
+                cmd="dsc__emoji__list"
+                ;;
             dsc__emoji__help,add)
                 cmd="dsc__emoji__help__add"
                 ;;
             dsc__emoji__help,help)
                 cmd="dsc__emoji__help__help"
+                ;;
+            dsc__emoji__help,list)
+                cmd="dsc__emoji__help__list"
                 ;;
             dsc__group,copy)
                 cmd="dsc__group__copy"
@@ -196,6 +205,9 @@ _dsc() {
             dsc__help__emoji,add)
                 cmd="dsc__help__emoji__add"
                 ;;
+            dsc__help__emoji,list)
+                cmd="dsc__help__emoji__list"
+                ;;
             dsc__help__group,copy)
                 cmd="dsc__help__group__copy"
                 ;;
@@ -205,6 +217,9 @@ _dsc() {
             dsc__help__group,list)
                 cmd="dsc__help__group__list"
                 ;;
+            dsc__help__list,tidy)
+                cmd="dsc__help__list__tidy"
+                ;;
             dsc__help__topic,pull)
                 cmd="dsc__help__topic__pull"
                 ;;
@@ -213,6 +228,18 @@ _dsc() {
                 ;;
             dsc__help__topic,sync)
                 cmd="dsc__help__topic__sync"
+                ;;
+            dsc__list,help)
+                cmd="dsc__list__help"
+                ;;
+            dsc__list,tidy)
+                cmd="dsc__list__tidy"
+                ;;
+            dsc__list__help,help)
+                cmd="dsc__list__help__help"
+                ;;
+            dsc__list__help,tidy)
+                cmd="dsc__list__help__tidy"
                 ;;
             dsc__topic,help)
                 cmd="dsc__topic__help"
@@ -245,7 +272,7 @@ _dsc() {
 
     case "${cmd}" in
         dsc)
-            opts="-c -h --config --help list add import update emoji topic category group backup completions help"
+            opts="-c -h --config --help list ls add import update emoji topic category group backup completions help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -583,7 +610,7 @@ _dsc() {
             return 0
             ;;
         dsc__emoji)
-            opts="-h --help add help"
+            opts="-h --help add list help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -611,7 +638,7 @@ _dsc() {
             return 0
             ;;
         dsc__emoji__help)
-            opts="add help"
+            opts="add list help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -641,6 +668,34 @@ _dsc() {
         dsc__emoji__help__help)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        dsc__emoji__help__list)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        dsc__emoji__list)
+            opts="-h --help <DISCOURSE>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -955,7 +1010,7 @@ _dsc() {
             return 0
             ;;
         dsc__help__emoji)
-            opts="add"
+            opts="add list"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -969,6 +1024,20 @@ _dsc() {
             return 0
             ;;
         dsc__help__emoji__add)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        dsc__help__emoji__list)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1067,8 +1136,22 @@ _dsc() {
             return 0
             ;;
         dsc__help__list)
-            opts=""
+            opts="tidy"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        dsc__help__list__tidy)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -1165,7 +1248,7 @@ _dsc() {
             return 0
             ;;
         dsc__list)
-            opts="-f -h --format --help"
+            opts="-f -h --format --help tidy help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1179,6 +1262,62 @@ _dsc() {
                     COMPREPLY=($(compgen -W "plaintext markdown markdown-table json yaml csv" -- "${cur}"))
                     return 0
                     ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        dsc__list__help)
+            opts="tidy help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        dsc__list__help__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        dsc__list__help__tidy)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        dsc__list__tidy)
+            opts="-h --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
                 *)
                     COMPREPLY=()
                     ;;

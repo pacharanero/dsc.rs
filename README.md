@@ -97,6 +97,8 @@ dsc completions zsh --dir ~/.zsh/completions
 echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
 autoload -Uz compinit && compinit
 
+# The Zsh generator writes `_dsc` in that directory.
+
 # Fish
 dsc completions fish --dir ~/.config/fish/completions
 ```

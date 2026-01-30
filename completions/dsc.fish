@@ -27,6 +27,7 @@ end
 complete -c dsc -n "__fish_dsc_needs_command" -s c -l config -r -F
 complete -c dsc -n "__fish_dsc_needs_command" -s h -l help -d 'Print help'
 complete -c dsc -n "__fish_dsc_needs_command" -f -a "list"
+complete -c dsc -n "__fish_dsc_needs_command" -f -a "ls"
 complete -c dsc -n "__fish_dsc_needs_command" -f -a "add"
 complete -c dsc -n "__fish_dsc_needs_command" -f -a "import"
 complete -c dsc -n "__fish_dsc_needs_command" -f -a "update"
@@ -37,13 +38,30 @@ complete -c dsc -n "__fish_dsc_needs_command" -f -a "group"
 complete -c dsc -n "__fish_dsc_needs_command" -f -a "backup"
 complete -c dsc -n "__fish_dsc_needs_command" -f -a "completions"
 complete -c dsc -n "__fish_dsc_needs_command" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
-complete -c dsc -n "__fish_dsc_using_subcommand list" -s f -l format -r -f -a "plaintext\t''
+complete -c dsc -n "__fish_dsc_using_subcommand list; and not __fish_seen_subcommand_from tidy help" -s f -l format -r -f -a "plaintext\t''
 markdown\t''
 markdown-table\t''
 json\t''
 yaml\t''
 csv\t''"
-complete -c dsc -n "__fish_dsc_using_subcommand list" -s h -l help -d 'Print help'
+complete -c dsc -n "__fish_dsc_using_subcommand list; and not __fish_seen_subcommand_from tidy help" -s h -l help -d 'Print help'
+complete -c dsc -n "__fish_dsc_using_subcommand list; and not __fish_seen_subcommand_from tidy help" -f -a "tidy" -d 'Sort discourse entries by name and rewrite config in-place. Also inserts placeholder values for unset template keys'
+complete -c dsc -n "__fish_dsc_using_subcommand list; and not __fish_seen_subcommand_from tidy help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c dsc -n "__fish_dsc_using_subcommand list; and __fish_seen_subcommand_from tidy" -s h -l help -d 'Print help'
+complete -c dsc -n "__fish_dsc_using_subcommand list; and __fish_seen_subcommand_from help" -f -a "tidy" -d 'Sort discourse entries by name and rewrite config in-place. Also inserts placeholder values for unset template keys'
+complete -c dsc -n "__fish_dsc_using_subcommand list; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c dsc -n "__fish_dsc_using_subcommand ls; and not __fish_seen_subcommand_from tidy help" -s f -l format -r -f -a "plaintext\t''
+markdown\t''
+markdown-table\t''
+json\t''
+yaml\t''
+csv\t''"
+complete -c dsc -n "__fish_dsc_using_subcommand ls; and not __fish_seen_subcommand_from tidy help" -s h -l help -d 'Print help'
+complete -c dsc -n "__fish_dsc_using_subcommand ls; and not __fish_seen_subcommand_from tidy help" -f -a "tidy" -d 'Sort discourse entries by name and rewrite config in-place. Also inserts placeholder values for unset template keys'
+complete -c dsc -n "__fish_dsc_using_subcommand ls; and not __fish_seen_subcommand_from tidy help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c dsc -n "__fish_dsc_using_subcommand ls; and __fish_seen_subcommand_from tidy" -s h -l help -d 'Print help'
+complete -c dsc -n "__fish_dsc_using_subcommand ls; and __fish_seen_subcommand_from help" -f -a "tidy" -d 'Sort discourse entries by name and rewrite config in-place. Also inserts placeholder values for unset template keys'
+complete -c dsc -n "__fish_dsc_using_subcommand ls; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c dsc -n "__fish_dsc_using_subcommand add" -s i -l interactive
 complete -c dsc -n "__fish_dsc_using_subcommand add" -s h -l help -d 'Print help'
 complete -c dsc -n "__fish_dsc_using_subcommand import" -s h -l help -d 'Print help'
@@ -51,11 +69,14 @@ complete -c dsc -n "__fish_dsc_using_subcommand update" -s m -l max -r
 complete -c dsc -n "__fish_dsc_using_subcommand update" -s C -l concurrent
 complete -c dsc -n "__fish_dsc_using_subcommand update" -s p -l post-changelog
 complete -c dsc -n "__fish_dsc_using_subcommand update" -s h -l help -d 'Print help'
-complete -c dsc -n "__fish_dsc_using_subcommand emoji; and not __fish_seen_subcommand_from add help" -s h -l help -d 'Print help'
-complete -c dsc -n "__fish_dsc_using_subcommand emoji; and not __fish_seen_subcommand_from add help" -f -a "add"
-complete -c dsc -n "__fish_dsc_using_subcommand emoji; and not __fish_seen_subcommand_from add help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c dsc -n "__fish_dsc_using_subcommand emoji; and not __fish_seen_subcommand_from add list help" -s h -l help -d 'Print help'
+complete -c dsc -n "__fish_dsc_using_subcommand emoji; and not __fish_seen_subcommand_from add list help" -f -a "add"
+complete -c dsc -n "__fish_dsc_using_subcommand emoji; and not __fish_seen_subcommand_from add list help" -f -a "list" -d 'List custom emojis on a Discourse'
+complete -c dsc -n "__fish_dsc_using_subcommand emoji; and not __fish_seen_subcommand_from add list help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c dsc -n "__fish_dsc_using_subcommand emoji; and __fish_seen_subcommand_from add" -s h -l help -d 'Print help'
+complete -c dsc -n "__fish_dsc_using_subcommand emoji; and __fish_seen_subcommand_from list" -s h -l help -d 'Print help'
 complete -c dsc -n "__fish_dsc_using_subcommand emoji; and __fish_seen_subcommand_from help" -f -a "add"
+complete -c dsc -n "__fish_dsc_using_subcommand emoji; and __fish_seen_subcommand_from help" -f -a "list" -d 'List custom emojis on a Discourse'
 complete -c dsc -n "__fish_dsc_using_subcommand emoji; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c dsc -n "__fish_dsc_using_subcommand topic; and not __fish_seen_subcommand_from pull push sync help" -s h -l help -d 'Print help'
 complete -c dsc -n "__fish_dsc_using_subcommand topic; and not __fish_seen_subcommand_from pull push sync help" -f -a "pull"
@@ -124,7 +145,9 @@ complete -c dsc -n "__fish_dsc_using_subcommand help; and not __fish_seen_subcom
 complete -c dsc -n "__fish_dsc_using_subcommand help; and not __fish_seen_subcommand_from list add import update emoji topic category group backup completions help" -f -a "backup"
 complete -c dsc -n "__fish_dsc_using_subcommand help; and not __fish_seen_subcommand_from list add import update emoji topic category group backup completions help" -f -a "completions"
 complete -c dsc -n "__fish_dsc_using_subcommand help; and not __fish_seen_subcommand_from list add import update emoji topic category group backup completions help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c dsc -n "__fish_dsc_using_subcommand help; and __fish_seen_subcommand_from list" -f -a "tidy" -d 'Sort discourse entries by name and rewrite config in-place. Also inserts placeholder values for unset template keys'
 complete -c dsc -n "__fish_dsc_using_subcommand help; and __fish_seen_subcommand_from emoji" -f -a "add"
+complete -c dsc -n "__fish_dsc_using_subcommand help; and __fish_seen_subcommand_from emoji" -f -a "list" -d 'List custom emojis on a Discourse'
 complete -c dsc -n "__fish_dsc_using_subcommand help; and __fish_seen_subcommand_from topic" -f -a "pull"
 complete -c dsc -n "__fish_dsc_using_subcommand help; and __fish_seen_subcommand_from topic" -f -a "push"
 complete -c dsc -n "__fish_dsc_using_subcommand help; and __fish_seen_subcommand_from topic" -f -a "sync"

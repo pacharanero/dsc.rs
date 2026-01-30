@@ -1,7 +1,7 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
-use clap_complete::{Shell, generate};
-use dsc::config::{Config, DiscourseConfig, find_discourse, load_config, save_config};
+use clap_complete::{generate, Shell};
+use dsc::config::{find_discourse, load_config, save_config, Config, DiscourseConfig};
 use dsc::discourse::{CategoryInfo, DiscourseClient, TopicSummary};
 use dsc::utils::{ensure_dir, read_markdown, resolve_topic_path, slugify, write_markdown};
 use std::fs;
@@ -383,23 +383,53 @@ fn write_completions(shell: CompletionShell, dir: Option<&Path>) -> Result<()> {
             ensure_dir(dir)?;
             let filename = match shell {
                 CompletionShell::Bash => "dsc.bash",
-                CompletionShell::Zsh => "dsc.zsh",
+                CompletionShell::Zsh => "_dsc",
                 CompletionShell::Fish => "dsc.fish",
             };
             let path = dir.join(filename);
-            let mut file =
-                fs::File::create(&path).with_context(|| format!("creating {}", path.display()))?;
             let generator: Shell = shell.into();
-            generate(generator, &mut cmd, name, &mut file);
+            if matches!(shell, CompletionShell::Zsh) {
+                let mut buffer = Vec::new();
+                generate(generator, &mut cmd, name, &mut buffer);
+                let content = String::from_utf8(buffer).context("decoding zsh completions")?;
+                let content = inject_zsh_sort_style(content);
+                fs::write(&path, content).with_context(|| format!("writing {}", path.display()))?;
+            } else {
+                let mut file = fs::File::create(&path)
+                    .with_context(|| format!("creating {}", path.display()))?;
+                generate(generator, &mut cmd, name, &mut file);
+            }
             println!("{}", path.display());
         }
         None => {
-            let mut stdout = io::stdout();
             let generator: Shell = shell.into();
-            generate(generator, &mut cmd, name, &mut stdout);
+            if matches!(shell, CompletionShell::Zsh) {
+                let mut buffer = Vec::new();
+                generate(generator, &mut cmd, name, &mut buffer);
+                let content = String::from_utf8(buffer).context("decoding zsh completions")?;
+                let content = inject_zsh_sort_style(content);
+                print!("{}", content);
+            } else {
+                let mut stdout = io::stdout();
+                generate(generator, &mut cmd, name, &mut stdout);
+            }
         }
     }
     Ok(())
+}
+
+fn inject_zsh_sort_style(mut content: String) -> String {
+    let style = "zstyle ':completion:*:dsc:*' sort false";
+    if content.contains(style) {
+        return content;
+    }
+    let marker = "autoload -U is-at-least\n";
+    if let Some(pos) = content.find(marker) {
+        let insert_at = pos + marker.len();
+        content.insert_str(insert_at, &format!("\n{}\n", style));
+        return content;
+    }
+    format!("{}\n\n{}", style, content)
 }
 
 fn list_discourses(config: &Config, format: OutputFormat) -> Result<()> {
@@ -606,7 +636,11 @@ fn fetch_fullname_from_url(baseurl: &str) -> Option<String> {
     match client.fetch_site_title() {
         Ok(title) => {
             let title = title.trim().to_string();
-            if title.is_empty() { None } else { Some(title) }
+            if title.is_empty() {
+                None
+            } else {
+                Some(title)
+            }
         }
         Err(err) => {
             println!("Failed to query site title for {}: {}", baseurl, err);
