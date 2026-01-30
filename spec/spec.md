@@ -90,6 +90,8 @@ Environment variables (optional overrides for SSH commands):
 
 > SSH credentials are not stored in `dsc.toml`; it is advised to set up SSH keys and use an SSH config file.
 
+Note: most forum read/write commands require `apikey` and `api_username`; if missing, the command fails with a clear message.
+
 ### `dsc update all [--post-changelog]`
 
 Updates all Discourses known to `dsc` over SSH.
@@ -117,6 +119,12 @@ Having a complete set of the Fontawesome icons used in the Discourse UI as Custo
 ### `dsc emoji add <discourse> <emoji-path> <emoji-name>`
 
 Adds a new emoji to a Discourse install from a local image file.
+
+### `dsc emoji list <discourse>`
+
+Lists custom emojis on a Discourse (name + URL).
+
+Note: this uses an admin endpoint and requires an admin API key and username.
 
 ## Topics
 

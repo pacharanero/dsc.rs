@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
-use clap_complete::{generate, Shell};
-use dsc::config::{find_discourse, load_config, save_config, Config, DiscourseConfig};
+use clap_complete::{Shell, generate};
+use dsc::config::{Config, DiscourseConfig, find_discourse, load_config, save_config};
 use dsc::discourse::{CategoryInfo, DiscourseClient, TopicSummary};
 use dsc::utils::{ensure_dir, read_markdown, resolve_topic_path, slugify, write_markdown};
 use std::fs;
@@ -87,6 +87,9 @@ enum EmojiCommand {
         emoji_path: PathBuf,
         emoji_name: String,
     },
+
+    /// List custom emojis on a Discourse.
+    List { discourse: String },
 }
 
 #[derive(Subcommand)]
@@ -234,6 +237,8 @@ fn main() -> Result<()> {
                 emoji_path,
                 emoji_name,
             } => add_emoji(&config, &discourse, &emoji_path, &emoji_name)?,
+
+            EmojiCommand::List { discourse } => list_emojis(&config, &discourse)?,
         },
         Commands::Topic { command } => match command {
             TopicCommand::Pull {
@@ -601,11 +606,7 @@ fn fetch_fullname_from_url(baseurl: &str) -> Option<String> {
     match client.fetch_site_title() {
         Ok(title) => {
             let title = title.trim().to_string();
-            if title.is_empty() {
-                None
-            } else {
-                Some(title)
-            }
+            if title.is_empty() { None } else { Some(title) }
         }
         Err(err) => {
             println!("Failed to query site title for {}: {}", baseurl, err);
@@ -618,6 +619,7 @@ fn update_one(config: &Config, name: &str, post_changelog: bool) -> Result<()> {
     let discourse = find_discourse(config, name).ok_or_else(|| anyhow!("unknown discourse"))?;
     let metadata = run_update(discourse)?;
     if post_changelog {
+        ensure_api_credentials(discourse)?;
         post_changelog_update(discourse, Some(&metadata))?;
     }
     Ok(())
@@ -677,6 +679,7 @@ fn update_all(
                 }
             };
             if post_changelog {
+                ensure_api_credentials(discourse)?;
                 if let Err(err) = post_changelog_update(discourse, Some(&metadata)) {
                     writeln!(
                         log_file,
@@ -709,6 +712,7 @@ fn update_all(
         handles.push(thread::spawn(move || {
             let metadata = run_update(&discourse)?;
             if do_post {
+                ensure_api_credentials(&discourse)?;
                 post_changelog_update(&discourse, Some(&metadata))?;
             }
             Ok::<_, anyhow::Error>(())
@@ -915,8 +919,28 @@ fn add_emoji(
     emoji_name: &str,
 ) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     client.upload_emoji(emoji_path, emoji_name)?;
+    Ok(())
+}
+
+fn list_emojis(config: &Config, discourse_name: &str) -> Result<()> {
+    let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
+    let client = DiscourseClient::new(discourse)?;
+    let mut emojis = client.list_custom_emojis()?;
+    emojis.sort_by(|a, b| a.name.cmp(&b.name));
+
+    if emojis.is_empty() {
+        println!("No custom emojis found");
+        return Ok(());
+    }
+
+    println!("name\turl");
+    for emoji in emojis {
+        println!("{}\t{}", emoji.name, emoji.url);
+    }
     Ok(())
 }
 
@@ -927,6 +951,7 @@ fn topic_pull(
     local_path: Option<&Path>,
 ) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     let topic = client.fetch_topic(topic_id, true)?;
     let raw = topic
@@ -935,7 +960,20 @@ fn topic_pull(
         .get(0)
         .and_then(|p| p.raw.clone())
         .ok_or_else(|| anyhow!("topic has no raw content"))?;
-    let target = resolve_topic_path(local_path, &topic.title, &std::env::current_dir()?)?;
+    let title = topic
+        .title
+        .as_deref()
+        .filter(|t| !t.trim().is_empty())
+        .map(|t| t.to_string())
+        .or_else(|| {
+            topic
+                .slug
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| format!("topic-{}", topic_id));
+    let target = resolve_topic_path(local_path, &title, &std::env::current_dir()?)?;
     write_markdown(&target, &raw)?;
     println!("{}", target.display());
     Ok(())
@@ -948,6 +986,7 @@ fn topic_push(
     local_path: &Path,
 ) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     let topic = client.fetch_topic(topic_id, true)?;
     let post = topic
@@ -968,6 +1007,7 @@ fn topic_sync(
     assume_yes: bool,
 ) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     let topic = client.fetch_topic(topic_id, true)?;
     let post = topic
@@ -1028,6 +1068,7 @@ fn confirm_sync(pull: bool) -> Result<bool> {
 
 fn category_list(config: &Config, discourse_name: &str, tree: bool) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     let categories = client.fetch_categories()?;
     let mut flat = Vec::new();
@@ -1136,6 +1177,7 @@ fn print_category_node(
 fn category_copy(config: &Config, discourse_name: &str, category_id: u64) -> Result<()> {
     let discourse = find_discourse(config, discourse_name)
         .ok_or_else(|| anyhow!("unknown discourse {}", discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     let categories = client.fetch_categories()?;
     let category = categories
@@ -1154,6 +1196,7 @@ fn category_copy(config: &Config, discourse_name: &str, category_id: u64) -> Res
 fn group_list(config: &Config, discourse_name: &str) -> Result<()> {
     let discourse = find_discourse(config, discourse_name)
         .ok_or_else(|| anyhow!("unknown discourse {}", discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     let groups = client.fetch_groups()?;
     for group in groups {
@@ -1166,6 +1209,7 @@ fn group_list(config: &Config, discourse_name: &str) -> Result<()> {
 fn group_info(config: &Config, discourse_name: &str, group_id: u64) -> Result<()> {
     let discourse = find_discourse(config, discourse_name)
         .ok_or_else(|| anyhow!("unknown discourse {}", discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     let groups = client.fetch_groups()?;
     let group_summary = groups
@@ -1184,6 +1228,9 @@ fn group_copy(config: &Config, source: &str, target: Option<&str>, group_id: u64
     let target_discourse_name = target.unwrap_or(source);
     let target_discourse = find_discourse(config, target_discourse_name)
         .ok_or_else(|| anyhow!("unknown discourse {}", target_discourse_name))?;
+
+    ensure_api_credentials(source_discourse)?;
+    ensure_api_credentials(target_discourse)?;
 
     let source_client = DiscourseClient::new(source_discourse)?;
     let groups = source_client.fetch_groups()?;
@@ -1207,6 +1254,7 @@ fn group_copy(config: &Config, source: &str, target: Option<&str>, group_id: u64
 fn backup_create(config: &Config, discourse_name: &str) -> Result<()> {
     let discourse = find_discourse(config, discourse_name)
         .ok_or_else(|| anyhow!("unknown discourse {}", discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     client.create_backup()?;
     Ok(())
@@ -1215,6 +1263,7 @@ fn backup_create(config: &Config, discourse_name: &str) -> Result<()> {
 fn backup_list(config: &Config, discourse_name: &str) -> Result<()> {
     let discourse = find_discourse(config, discourse_name)
         .ok_or_else(|| anyhow!("unknown discourse {}", discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     let backups = client.list_backups()?;
     let raw = serde_json::to_string_pretty(&backups)?;
@@ -1225,6 +1274,7 @@ fn backup_list(config: &Config, discourse_name: &str) -> Result<()> {
 fn backup_restore(config: &Config, discourse_name: &str, backup_path: &str) -> Result<()> {
     let discourse = find_discourse(config, discourse_name)
         .ok_or_else(|| anyhow!("unknown discourse {}", discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     client.restore_backup(backup_path)?;
     Ok(())
@@ -1237,6 +1287,7 @@ fn category_pull(
     local_path: Option<&Path>,
 ) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     let category = client.fetch_category(category_id)?;
     let dir = match local_path {
@@ -1273,6 +1324,7 @@ fn category_push(
     local_path: &Path,
 ) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     let existing = client.fetch_category(category_id)?;
     let mut topics = existing.topic_list.topics;
@@ -1345,6 +1397,18 @@ fn select_discourse<'a>(
         return find_discourse(config, name).ok_or_else(|| anyhow!("unknown discourse {}", name));
     }
     Err(anyhow!("discourse name is required"))
+}
+
+fn ensure_api_credentials(discourse: &DiscourseConfig) -> Result<()> {
+    let apikey = discourse.apikey.as_deref().unwrap_or("").trim();
+    let api_username = discourse.api_username.as_deref().unwrap_or("").trim();
+    if apikey.is_empty() || api_username.is_empty() {
+        return Err(anyhow!(
+            "missing api credentials for {}; please set apikey and api_username in dsc.toml",
+            discourse.name
+        ));
+    }
+    Ok(())
 }
 
 fn prompt(label: &str) -> Result<String> {

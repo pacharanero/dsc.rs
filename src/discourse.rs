@@ -1,6 +1,6 @@
 use crate::config::DiscourseConfig;
 use crate::utils::normalize_baseurl;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -120,10 +120,12 @@ impl DiscourseClient {
         };
         let response = self.get(&path)?;
         let status = response.status();
-        let body: TopicResponse = response.json().context("reading topic json")?;
         if !status.is_success() {
-            return Err(anyhow!("topic request failed with {}", status));
+            let text = response.text().context("reading topic response body")?;
+            return Err(anyhow!("topic request failed with {}: {}", status, text));
         }
+        let text = response.text().context("reading topic response body")?;
+        let body: TopicResponse = serde_json::from_str(&text).context("parsing topic json")?;
         Ok(body)
     }
 
@@ -335,6 +337,61 @@ impl DiscourseClient {
             return Err(anyhow!("emoji upload failed with {}", response.status()));
         }
         Ok(())
+    }
+
+    /// List custom emojis.
+    pub fn list_custom_emojis(&self) -> Result<Vec<CustomEmoji>> {
+        let response = self.get("/admin/customize/emojis.json")?;
+        let status = response.status();
+        let text = response.text().context("reading emoji list response")?;
+        if !status.is_success() {
+            return Err(anyhow!("emoji list failed with {}: {}", status, text));
+        }
+        let value: Value = serde_json::from_str(&text).context("parsing emoji list json")?;
+
+        let emojis = if let Some(arr) = value.as_array() {
+            arr
+        } else {
+            match value
+                .get("emojis")
+                .and_then(|v| v.as_array())
+                .or_else(|| value.get("custom_emojis").and_then(|v| v.as_array()))
+            {
+                Some(arr) => arr,
+                None => return Ok(Vec::new()),
+            }
+        };
+
+        let baseurl = self.baseurl.trim_end_matches('/');
+        let mut out = Vec::new();
+        for item in emojis.iter() {
+            let name = item.get("name").and_then(|v| v.as_str());
+            let url = item
+                .get("url")
+                .and_then(|v| v.as_str())
+                .or_else(|| item.get("image_url").and_then(|v| v.as_str()));
+            if let (Some(name), Some(url)) = (name, url) {
+                let url = if url.starts_with("http://") || url.starts_with("https://") {
+                    url.to_string()
+                } else if url.starts_with("//") {
+                    let scheme = if baseurl.starts_with("http://") {
+                        "http:"
+                    } else {
+                        "https:"
+                    };
+                    format!("{}{}", scheme, url)
+                } else if url.starts_with('/') {
+                    format!("{}{}", baseurl, url)
+                } else {
+                    format!("{}/{}", baseurl, url)
+                };
+                out.push(CustomEmoji {
+                    name: name.to_string(),
+                    url,
+                });
+            }
+        }
+        Ok(out)
     }
 
     /// Trigger a backup on the Discourse instance.
@@ -581,11 +638,7 @@ fn extract_html_title(html: &str) -> Option<String> {
     let title = String::from_utf8_lossy(&haystack[start..end])
         .trim()
         .to_string();
-    if title.is_empty() {
-        None
-    } else {
-        Some(title)
-    }
+    if title.is_empty() { None } else { Some(title) }
 }
 
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -631,8 +684,10 @@ pub struct AboutInfo {
 /// Response payload for topic JSON.
 #[derive(Debug, Deserialize)]
 pub struct TopicResponse {
-    pub title: String,
-    pub slug: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub slug: Option<String>,
     pub post_stream: PostStream,
 }
 
@@ -652,6 +707,12 @@ pub struct Post {
     pub updated_at: Option<String>,
     #[serde(default)]
     pub created_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CustomEmoji {
+    pub name: String,
+    pub url: String,
 }
 
 /// Response payload for category JSON.

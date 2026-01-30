@@ -55,6 +55,7 @@ Notes:
 - `ssh_host` enables `update` over SSH (`./launcher rebuild app`). Configure keys in your SSH config.
 - `changelog_topic_id` is required if you want `--post-changelog` to post a checklist update.
 - `tags` (optional) can label installs; they are emitted in list output formats.
+- Most forum read/write commands require `apikey` and `api_username`. If they are missing, `dsc` will fail with a clear message.
 - `dsc add` without `--interactive` appends a full `[[discourse]]` template containing every supported config key, using placeholders like `""`, `[]`, and `0`.
 - Empty strings and `0` values are treated as “unset” (most commands behave as if the key is missing).
 
@@ -68,6 +69,7 @@ General form: `dsc [--config dsc.toml] <command>`.
 - Update one install: `dsc update <name> [--post-changelog]`
 - Update all installs: `dsc update all [--post-changelog]`
 - Add emoji: `dsc emoji add <discourse> <emoji.png> <emoji-name>`
+- List custom emoji: `dsc emoji list <discourse>`
 - Topic pull: `dsc topic pull <discourse> <topic-id> [local-path]`
 - Topic push: `dsc topic push <discourse> <local-path> <topic-id>`
 - Topic sync (auto pull or push based on freshest copy): `dsc topic sync <discourse> <topic-id> <local-path> [--yes]`
