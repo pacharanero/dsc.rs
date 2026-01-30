@@ -6,8 +6,6 @@ This is a living checklist of the remaining work to fully implement and/or recon
 
 - [ ] Implement `dsc list --tags <tag1,tag2,...>` filtering (spec defines this flag; CLI currently lists all installs).
 - [ ] Decide how tag filtering parses separators (comma vs semicolon) and document it in the spec (import currently accepts `,` and `;` for tags).
-- [ ] Reconcile `dsc category pull` argument order with the spec (`--discourse <discourse> <category-id> [<local-path>]`) vs current CLI (`<category-id> [<local-path>] [--discourse <discourse>]`).
-- [ ] Reconcile `dsc category push` argument order and placeholder naming with the spec (`--discourse <discourse> <local-file> <category-id>`). Current implementation expects a directory and uses positional ordering `<local-path> <category-id>`.
 - [ ] Implement a bulk emoji upload command (spec narrative says bulk upload from a directory; only single `dsc emoji add` exists today).
 
 ## Server OS Update Implementation

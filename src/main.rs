@@ -1,7 +1,7 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
-use clap_complete::{Shell, generate};
-use dsc::config::{Config, DiscourseConfig, find_discourse, load_config, save_config};
+use clap_complete::{generate, Shell};
+use dsc::config::{find_discourse, load_config, save_config, Config, DiscourseConfig};
 use dsc::discourse::{CategoryInfo, DiscourseClient, TopicSummary};
 use dsc::utils::{ensure_dir, read_markdown, resolve_topic_path, slugify, write_markdown};
 use std::fs;
@@ -73,33 +73,28 @@ enum Commands {
 #[derive(Subcommand)]
 enum EmojiCommand {
     Add {
+        discourse: String,
         emoji_path: PathBuf,
         emoji_name: String,
-        discourse_name: Option<String>,
-        #[arg(long, short = 'd')]
-        discourse: Option<String>,
     },
 }
 
 #[derive(Subcommand)]
 enum TopicCommand {
     Pull {
+        discourse: String,
         topic_id: u64,
         local_path: Option<PathBuf>,
-        #[arg(long, short = 'd')]
-        discourse: Option<String>,
     },
     Push {
+        discourse: String,
         local_path: PathBuf,
         topic_id: u64,
-        #[arg(long, short = 'd')]
-        discourse: Option<String>,
     },
     Sync {
+        discourse: String,
         topic_id: u64,
         local_path: PathBuf,
-        #[arg(long, short = 'd')]
-        discourse: Option<String>,
         #[arg(long, short = 'y')]
         yes: bool,
     },
@@ -108,49 +103,39 @@ enum TopicCommand {
 #[derive(Subcommand)]
 enum CategoryCommand {
     List {
-        discourse_name: Option<String>,
-        #[arg(long, short = 'd')]
-        discourse: Option<String>,
+        discourse: String,
         #[arg(long)]
         tree: bool,
     },
     Copy {
-        #[arg(long, short = 'd', required = true)]
         discourse: String,
         category_id: u64,
     },
     Pull {
+        discourse: String,
         category_id: u64,
         local_path: Option<PathBuf>,
-        #[arg(long, short = 'd')]
-        discourse: Option<String>,
     },
     Push {
+        discourse: String,
         local_path: PathBuf,
         category_id: u64,
-        #[arg(long, short = 'd')]
-        discourse: Option<String>,
     },
 }
 
 #[derive(Subcommand)]
 enum GroupCommand {
     List {
-        #[arg(long, short = 'd', required = true)]
         discourse: String,
     },
     Info {
-        #[arg(long, short = 'd', required = true)]
         discourse: String,
-        #[arg(long, short = 'g', required = true)]
         group: u64,
     },
     Copy {
-        #[arg(long, short = 'd', required = true)]
         discourse: String,
         #[arg(long, short = 't')]
         target: Option<String>,
-        #[arg(long, short = 'g', required = true)]
         group: u64,
     },
 }
@@ -158,15 +143,12 @@ enum GroupCommand {
 #[derive(Subcommand)]
 enum BackupCommand {
     Create {
-        #[arg(long, short = 'd', required = true)]
         discourse: String,
     },
     List {
-        #[arg(long, short = 'd', required = true)]
         discourse: String,
     },
     Restore {
-        #[arg(long, short = 'd', required = true)]
         discourse: String,
         backup_path: String,
     },
@@ -233,68 +215,45 @@ fn main() -> Result<()> {
         }
         Commands::Emoji { command } => match command {
             EmojiCommand::Add {
+                discourse,
                 emoji_path,
                 emoji_name,
-                discourse_name,
-                discourse,
-            } => {
-                let name = merge_discourse_name(discourse_name.as_deref(), discourse.as_deref());
-                add_emoji(&config, name, &emoji_path, &emoji_name)?;
-            }
+            } => add_emoji(&config, &discourse, &emoji_path, &emoji_name)?,
         },
         Commands::Topic { command } => match command {
             TopicCommand::Pull {
+                discourse,
                 topic_id,
                 local_path,
-                discourse,
-            } => topic_pull(
-                &config,
-                topic_id,
-                local_path.as_deref(),
-                discourse.as_deref(),
-            )?,
+            } => topic_pull(&config, &discourse, topic_id, local_path.as_deref())?,
             TopicCommand::Push {
+                discourse,
                 local_path,
                 topic_id,
-                discourse,
-            } => topic_push(&config, topic_id, &local_path, discourse.as_deref())?,
+            } => topic_push(&config, &discourse, topic_id, &local_path)?,
             TopicCommand::Sync {
+                discourse,
                 topic_id,
                 local_path,
-                discourse,
                 yes,
-            } => topic_sync(&config, topic_id, &local_path, discourse.as_deref(), yes)?,
+            } => topic_sync(&config, &discourse, topic_id, &local_path, yes)?,
         },
         Commands::Category { command } => match command {
-            CategoryCommand::List {
-                discourse_name,
-                discourse,
-                tree,
-            } => category_list(
-                &config,
-                discourse_name.as_deref(),
-                discourse.as_deref(),
-                tree,
-            )?,
+            CategoryCommand::List { discourse, tree } => category_list(&config, &discourse, tree)?,
             CategoryCommand::Copy {
                 discourse,
                 category_id,
             } => category_copy(&config, &discourse, category_id)?,
             CategoryCommand::Pull {
+                discourse,
                 category_id,
                 local_path,
-                discourse,
-            } => category_pull(
-                &config,
-                category_id,
-                local_path.as_deref(),
-                discourse.as_deref(),
-            )?,
+            } => category_pull(&config, &discourse, category_id, local_path.as_deref())?,
             CategoryCommand::Push {
+                discourse,
                 local_path,
                 category_id,
-                discourse,
-            } => category_push(&config, category_id, &local_path, discourse.as_deref())?,
+            } => category_push(&config, &discourse, category_id, &local_path)?,
         },
         Commands::Group { command } => match command {
             GroupCommand::List { discourse } => group_list(&config, &discourse)?,
@@ -816,11 +775,11 @@ fn post_changelog_update(
 
 fn add_emoji(
     config: &Config,
-    discourse_name: Option<&str>,
+    discourse_name: &str,
     emoji_path: &Path,
     emoji_name: &str,
 ) -> Result<()> {
-    let discourse = select_discourse(config, discourse_name)?;
+    let discourse = select_discourse(config, Some(discourse_name))?;
     let client = DiscourseClient::new(discourse)?;
     client.upload_emoji(emoji_path, emoji_name)?;
     Ok(())
@@ -828,11 +787,11 @@ fn add_emoji(
 
 fn topic_pull(
     config: &Config,
+    discourse_name: &str,
     topic_id: u64,
     local_path: Option<&Path>,
-    discourse_name: Option<&str>,
 ) -> Result<()> {
-    let discourse = select_discourse(config, discourse_name)?;
+    let discourse = select_discourse(config, Some(discourse_name))?;
     let client = DiscourseClient::new(discourse)?;
     let topic = client.fetch_topic(topic_id, true)?;
     let raw = topic
@@ -849,11 +808,11 @@ fn topic_pull(
 
 fn topic_push(
     config: &Config,
+    discourse_name: &str,
     topic_id: u64,
     local_path: &Path,
-    discourse_name: Option<&str>,
 ) -> Result<()> {
-    let discourse = select_discourse(config, discourse_name)?;
+    let discourse = select_discourse(config, Some(discourse_name))?;
     let client = DiscourseClient::new(discourse)?;
     let topic = client.fetch_topic(topic_id, true)?;
     let post = topic
@@ -868,12 +827,12 @@ fn topic_push(
 
 fn topic_sync(
     config: &Config,
+    discourse_name: &str,
     topic_id: u64,
     local_path: &Path,
-    discourse_name: Option<&str>,
     assume_yes: bool,
 ) -> Result<()> {
-    let discourse = select_discourse(config, discourse_name)?;
+    let discourse = select_discourse(config, Some(discourse_name))?;
     let client = DiscourseClient::new(discourse)?;
     let topic = client.fetch_topic(topic_id, true)?;
     let post = topic
@@ -932,13 +891,8 @@ fn confirm_sync(pull: bool) -> Result<bool> {
     Ok(matches!(input.trim(), "y" | "Y" | "yes" | "YES"))
 }
 
-fn category_list(
-    config: &Config,
-    discourse_name: Option<&str>,
-    discourse_flag: Option<&str>,
-    tree: bool,
-) -> Result<()> {
-    let discourse = select_discourse(config, merge_discourse_name(discourse_name, discourse_flag))?;
+fn category_list(config: &Config, discourse_name: &str, tree: bool) -> Result<()> {
+    let discourse = select_discourse(config, Some(discourse_name))?;
     let client = DiscourseClient::new(discourse)?;
     let categories = client.fetch_categories()?;
     let mut flat = Vec::new();
@@ -1143,11 +1097,11 @@ fn backup_restore(config: &Config, discourse_name: &str, backup_path: &str) -> R
 
 fn category_pull(
     config: &Config,
+    discourse_name: &str,
     category_id: u64,
     local_path: Option<&Path>,
-    discourse_name: Option<&str>,
 ) -> Result<()> {
-    let discourse = select_discourse(config, discourse_name)?;
+    let discourse = select_discourse(config, Some(discourse_name))?;
     let client = DiscourseClient::new(discourse)?;
     let category = client.fetch_category(category_id)?;
     let dir = match local_path {
@@ -1179,11 +1133,11 @@ fn category_pull(
 
 fn category_push(
     config: &Config,
+    discourse_name: &str,
     category_id: u64,
     local_path: &Path,
-    discourse_name: Option<&str>,
 ) -> Result<()> {
-    let discourse = select_discourse(config, discourse_name)?;
+    let discourse = select_discourse(config, Some(discourse_name))?;
     let client = DiscourseClient::new(discourse)?;
     let existing = client.fetch_category(category_id)?;
     let mut topics = existing.topic_list.topics;
@@ -1255,14 +1209,7 @@ fn select_discourse<'a>(
     if let Some(name) = discourse_name {
         return find_discourse(config, name).ok_or_else(|| anyhow!("unknown discourse {}", name));
     }
-    if config.discourse.len() == 1 {
-        return Ok(&config.discourse[0]);
-    }
-    Err(anyhow!("multiple discourses configured; use --discourse"))
-}
-
-fn merge_discourse_name<'a>(positional: Option<&'a str>, flag: Option<&'a str>) -> Option<&'a str> {
-    flag.or(positional)
+    Err(anyhow!("discourse name is required"))
 }
 
 fn prompt(label: &str) -> Result<String> {

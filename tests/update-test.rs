@@ -94,7 +94,6 @@ fn update_all() {
         .arg(&config_path)
         .arg("update")
         .arg("all")
-        .arg("-C")
         .arg("-p")
         .env("DSC_TEST_MARKER", &marker)
         .env("DSC_SSH_UPDATE_CMD", "echo update-ok")

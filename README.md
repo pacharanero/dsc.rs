@@ -7,6 +7,7 @@ It acts as a command-line companion that keeps multiple forums in sync from your
 Most functionality is provided through interactions with the Discourse REST API, apart from `dsc update` which runs a remote rebuild via SSH.
 
 ## Features
+
 - Track any number of Discourse installs via a single config file.
 - Manage categories, topics, settings and groups across installs.
 - Run rebuilds over SSH and optionally post changelog updates.
@@ -15,6 +16,7 @@ Most functionality is provided through interactions with the Discourse REST API,
 - Upload custom emojis in bulk to a forum.
 
 ## Installation
+
 - Prerequisites: a recent Rust toolchain (edition 2024; install via rustup).
 - From source (debug):
   ```bash
@@ -32,6 +34,7 @@ Most functionality is provided through interactions with the Discourse REST API,
   ```
 
 ## Configuration
+
 `dsc` reads configuration from `dsc.toml` in the working directory by default (override with `--config <path>`). Each Discourse instance lives under a `[[discourse]]` table. See [dsc.example.toml](dsc.example.toml) for a fuller template. Minimum useful fields are `name`, `baseurl`, `apikey`, and `api_username`.
 
 ```toml
@@ -45,6 +48,7 @@ ssh_host = "forum.example.com"
 ```
 
 Notes:
+
 - `baseurl` should not end with a trailing slash.
 - `ssh_host` enables `update` over SSH (`./launcher rebuild app`). Configure keys in your SSH config.
 - `changelog_topic_id` is required if you want `--post-changelog` to post a checklist update.
@@ -53,40 +57,57 @@ Notes:
 - Empty strings and `0` values are treated as “unset” (most commands behave as if the key is missing).
 
 ## Usage
+
 General form: `dsc [--config dsc.toml] <command>`.
 
 - List installs: `dsc list --format plaintext|markdown|markdown-table|json|yaml|csv`
 - Add installs: `dsc add forum-a,forum-b [--interactive]`
 - Import installs from file: `dsc import path/to/urls.txt` or `dsc import path/to/forums.csv`
 - Update one install: `dsc update <name> [--post-changelog]`
-- Update all installs: `dsc update all --concurrent [--max <N>] [--post-changelog]`
-- Add emoji: `dsc emoji add <emoji.png> <emoji-name> <discourse-name>`
-- Topic pull: `dsc topic pull <topic-id> [local-path] [--discourse <name>]`
-- Topic push: `dsc topic push <local-path> <topic-id> [--discourse <name>]`
-- Topic sync (auto pull or push based on freshest copy): `dsc topic sync <topic-id> <local-path> [--discourse <name>] [--yes]`
-- Category list: `dsc category list [--discourse <name>] [--tree]`
-- Category pull: `dsc category pull <category-id> [local-path] [--discourse <name>]`
-- Category push: `dsc category push <local-path> <category-id> [--discourse <name>]`
-- Category copy: `dsc category copy --discourse <name> <category-id>`
-- Group list: `dsc group list --discourse <name>`
-- Group info: `dsc group info --discourse <name> --group <group-id>`
-- Group copy: `dsc group copy --discourse <source> [--target <target>] --group <group-id>`
-- Backup create: `dsc backup create --discourse <name>`
-- Backup list: `dsc backup list --discourse <name>`
-- Backup restore: `dsc backup restore --discourse <name> <backup-path>`
+- Update all installs: `dsc update all [--post-changelog]`
+- Add emoji: `dsc emoji add <discourse> <emoji.png> <emoji-name>`
+- Topic pull: `dsc topic pull <discourse> <topic-id> [local-path]`
+- Topic push: `dsc topic push <discourse> <local-path> <topic-id>`
+- Topic sync (auto pull or push based on freshest copy): `dsc topic sync <discourse> <topic-id> <local-path> [--yes]`
+- Category list: `dsc category list <discourse> [--tree]`
+- Category pull: `dsc category pull <discourse> <category-id> [local-path]`
+- Category push: `dsc category push <discourse> <local-path> <category-id>`
+- Category copy: `dsc category copy <discourse> <category-id>`
+- Group list: `dsc group list <discourse>`
+- Group info: `dsc group info <discourse> <group-id>`
+- Group copy: `dsc group copy <source> <group-id> [--target <target>]`
+- Backup create: `dsc backup create <discourse>`
+- Backup list: `dsc backup list <discourse>`
+- Backup restore: `dsc backup restore <discourse> <backup-path>`
 
 Tips:
-- When multiple installs are configured, supply `--discourse <name>` for topic/category commands.
+
+- Most commands require the discourse name as the first argument after the subcommand.
 - `topic pull`/`category pull` write Markdown files; paths are created as needed.
 - `topic sync` compares local mtime with the remote post timestamp; pass `--yes` to skip the prompt.
 - `dsc update all` writes a progress log named `YYYY.MM.DD-dsc-update-all.log` in the current directory and stops at the first failure; `--concurrent` is disabled for this command.
 
 ## Development
+
 - Build fast feedback: `cargo build`
 - Lint/format (if you have rustfmt/clippy in toolchain): `cargo fmt` then `cargo clippy` (optional but recommended)
 - Run example binary locally: `cargo run -- --help`
 
+## Release
+
+Releases are automated via Git tags and GitHub Actions using cargo-dist.
+
+Steps:
+
+1. Ensure your working tree is clean and tests pass.
+2. Run `s/release <version>` (for example, `s/release 0.2.0`).
+3. The script commits the version bump, tags `v<version>`, and pushes.
+4. The `Release` workflow builds and uploads binaries to GitHub Releases.
+
+Artifacts include platform-specific archives, checksums, and a shell installer script.
+
 ## Testing
+
 - Standard test suite: `cargo test`
 - End-to-end tests hit a real Discourse. Provide credentials in `testdsc.toml` (or point `TEST_DSC_CONFIG` to a file) using the shape shown below; otherwise e2e tests auto-skip.
 
@@ -104,6 +125,7 @@ emoji_name = "smile"
 ```
 
 ## Project layout
+
 - CLI entrypoint and commands: [src/main.rs](src/main.rs)
 - API client and forum interactions: [src/discourse.rs](src/discourse.rs)
 - Config structures and helpers: [src/config.rs](src/config.rs)
@@ -111,7 +133,12 @@ emoji_name = "smile"
 - Example configuration: [dsc.example.toml](dsc.example.toml)
 - Specification notes: [spec/spec.md](spec/spec.md)
 
+## License
+
+MIT. See [LICENSE](LICENSE).
+
 ## Example workflow
+
 ```bash
 # Create a config file
 cat > dsc.toml <<'EOF'
@@ -128,8 +155,8 @@ EOF
 ./target/release/dsc list --format markdown
 
 # Pull a topic into Markdown for editing
-./target/release/dsc topic pull 42 ./content --discourse myforum
+./target/release/dsc topic pull myforum 42 ./content
 
 # Push the edited topic back up
-./target/release/dsc topic push ./content/topic-title.md 42 --discourse myforum
+./target/release/dsc topic push myforum ./content/topic-title.md 42
 ```

@@ -29,10 +29,9 @@ fn topic_pull() {
         &[
             "topic",
             "pull",
+            &test.name,
             &topic_id.to_string(),
             dir.path().to_str().unwrap(),
-            "--discourse",
-            &test.name,
         ],
         &config_path,
     );
@@ -64,10 +63,9 @@ fn topic_push() {
         &[
             "topic",
             "push",
+            &test.name,
             file_path.to_str().unwrap(),
             &topic_id.to_string(),
-            "--discourse",
-            &test.name,
         ],
         &config_path,
     );
@@ -109,10 +107,9 @@ fn topic_sync() {
         &[
             "topic",
             "sync",
+            &test.name,
             &topic_id.to_string(),
             file_path.to_str().unwrap(),
-            "--discourse",
-            &test.name,
             "--yes",
         ],
         &config_path,

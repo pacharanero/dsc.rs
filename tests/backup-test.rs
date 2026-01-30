@@ -19,7 +19,7 @@ fn backup_list() {
             test.name, test.baseurl, test.apikey, test.api_username
         ),
     );
-    let output = run_dsc(&["backup", "list", "--discourse", &test.name], &config_path);
+    let output = run_dsc(&["backup", "list", &test.name], &config_path);
     assert!(output.status.success(), "backup list failed");
 }
 
@@ -40,10 +40,7 @@ fn backup_create() {
             test.name, test.baseurl, test.apikey, test.api_username
         ),
     );
-    let output = run_dsc(
-        &["backup", "create", "--discourse", &test.name],
-        &config_path,
-    );
+    let output = run_dsc(&["backup", "create", &test.name], &config_path);
     assert!(output.status.success(), "backup create failed");
 }
 
@@ -68,7 +65,7 @@ fn backup_restore() {
         ),
     );
     let output = run_dsc(
-        &["backup", "restore", "--discourse", &test.name, backup_path],
+        &["backup", "restore", &test.name, backup_path],
         &config_path,
     );
     assert!(output.status.success(), "backup restore failed");

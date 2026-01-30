@@ -25,10 +25,7 @@ fn category_list() {
             test.name, test.baseurl, test.apikey, test.api_username
         ),
     );
-    let output = run_dsc(
-        &["category", "list", "--discourse", &test.name],
-        &config_path,
-    );
+    let output = run_dsc(&["category", "list", &test.name], &config_path);
     assert!(output.status.success(), "category list failed");
 }
 
@@ -63,13 +60,7 @@ fn category_copy() {
         ),
     );
     let output = run_dsc(
-        &[
-            "category",
-            "copy",
-            "--discourse",
-            &source.name,
-            &category_id.to_string(),
-        ],
+        &["category", "copy", &source.name, &category_id.to_string()],
         &config_path,
     );
     assert!(output.status.success(), "category copy failed");
@@ -106,10 +97,9 @@ fn category_pull() {
         &[
             "category",
             "pull",
+            &test.name,
             &category_id.to_string(),
             dir.path().to_str().unwrap(),
-            "--discourse",
-            &test.name,
         ],
         &config_path,
     );
@@ -146,10 +136,9 @@ fn category_push() {
         &[
             "category",
             "push",
+            &test.name,
             dir.path().to_str().unwrap(),
             &category_id.to_string(),
-            "--discourse",
-            &test.name,
         ],
         &config_path,
     );

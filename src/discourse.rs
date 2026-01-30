@@ -1,6 +1,6 @@
 use crate::config::DiscourseConfig;
 use crate::utils::normalize_baseurl;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -101,6 +101,22 @@ impl DiscourseClient {
             return Err(anyhow!("topic request failed with {}", status));
         }
         Ok(body)
+    }
+
+    /// Fetch a post by ID and return its raw content.
+    pub fn fetch_post_raw(&self, post_id: u64) -> Result<Option<String>> {
+        let path = format!("/posts/{}.json?include_raw=1", post_id);
+        let response = self.get(&path)?;
+        let status = response.status();
+        let text = response.text().context("reading post response body")?;
+        if !status.is_success() {
+            return Err(anyhow!("post request failed with {}: {}", status, text));
+        }
+        let value: Value = serde_json::from_str(&text).context("parsing post response")?;
+        Ok(value
+            .get("raw")
+            .and_then(|raw| raw.as_str())
+            .map(|raw| raw.to_string()))
     }
 
     /// Fetch a category by ID (topics list included).

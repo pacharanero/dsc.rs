@@ -26,7 +26,7 @@ fn group_list() {
             test.name, test.baseurl, test.apikey, test.api_username
         ),
     );
-    let output = run_dsc(&["group", "list", "--discourse", &test.name], &config_path);
+    let output = run_dsc(&["group", "list", &test.name], &config_path);
     assert!(output.status.success(), "group list failed");
 }
 
@@ -54,14 +54,7 @@ fn group_info() {
         ),
     );
     let output = run_dsc(
-        &[
-            "group",
-            "info",
-            "--discourse",
-            &test.name,
-            "--group",
-            &group_id.to_string(),
-        ],
+        &["group", "info", &test.name, &group_id.to_string()],
         &config_path,
     );
     assert!(output.status.success(), "group info failed");
@@ -108,12 +101,10 @@ fn group_copy() {
         &[
             "group",
             "copy",
-            "--discourse",
             &source.name,
+            &group_id.to_string(),
             "--target",
             &target.name,
-            "--group",
-            &group_id.to_string(),
         ],
         &config_path,
     );

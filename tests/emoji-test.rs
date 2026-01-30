@@ -30,7 +30,7 @@ fn emoji_add() {
         ),
     );
     let output = run_dsc(
-        &["emoji", "add", emoji_path, emoji_name, &test.name],
+        &["emoji", "add", &test.name, emoji_path, emoji_name],
         &config_path,
     );
     assert!(output.status.success(), "emoji add failed");
