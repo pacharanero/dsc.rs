@@ -4,16 +4,16 @@ This is a living checklist of the remaining work to fully implement and/or recon
 
 ## Release / Distribution
 
-- [ ] Decide the supported installation paths (GitHub Releases binaries, crates.io, both) and document the supported matrix (OS/arch).
-- [ ] Keep cargo-dist configuration up to date (targets, installers) and verify `v*` tag releases work end-to-end.
-- [ ] Decide whether crates.io publishing is manual (initially) or automated in CI; document the required secrets/permissions.
-- [ ] Add a short changelog/release-notes process (even if minimal) so tags map cleanly to user-visible changes.
+- [x] Decide the supported installation paths (GitHub Releases binaries, crates.io, both) and document the supported matrix (OS/arch).
+- [x] Keep cargo-dist configuration up to date (targets, installers) and verify `v*` tag releases work end-to-end.
+- [x] Decide whether crates.io publishing is manual (initially) or automated in CI; document the required secrets/permissions.
+- [x] Add a short changelog/release-notes process (even if minimal) so tags map cleanly to user-visible changes.
 
 ## Spec parity (missing or mismatched)
 
-- [ ] Implement `dsc list --tags <tag1,tag2,...>` filtering (spec defines this flag; CLI currently lists all installs).
-- [ ] Decide how tag filtering parses separators (comma vs semicolon) and document it in the spec (import currently accepts `,` and `;` for tags).
-- [ ] Implement a bulk emoji upload command (spec narrative says bulk upload from a directory; only single `dsc emoji add` exists today).
+- [x] Implement `dsc list --tags <tag1,tag2,...>` filtering (spec defines this flag; CLI currently lists all installs).
+- [x] Decide how tag filtering parses separators (comma vs semicolon) and document it in the spec (import currently accepts `,` and `;` for tags).
+- [x] Implement a bulk emoji upload command (spec narrative says bulk upload from a directory; only single `dsc emoji add` exists today).
 
 ## Server OS Update Implementation
 

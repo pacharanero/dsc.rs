@@ -44,6 +44,7 @@ markdown-table\t''
 json\t''
 yaml\t''
 csv\t''"
+complete -c dsc -n "__fish_dsc_using_subcommand list; and not __fish_seen_subcommand_from tidy help" -l tags -r
 complete -c dsc -n "__fish_dsc_using_subcommand list; and not __fish_seen_subcommand_from tidy help" -s h -l help -d 'Print help'
 complete -c dsc -n "__fish_dsc_using_subcommand list; and not __fish_seen_subcommand_from tidy help" -f -a "tidy" -d 'Sort discourse entries by name and rewrite config in-place. Also inserts placeholder values for unset template keys'
 complete -c dsc -n "__fish_dsc_using_subcommand list; and not __fish_seen_subcommand_from tidy help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
@@ -56,6 +57,7 @@ markdown-table\t''
 json\t''
 yaml\t''
 csv\t''"
+complete -c dsc -n "__fish_dsc_using_subcommand ls; and not __fish_seen_subcommand_from tidy help" -l tags -r
 complete -c dsc -n "__fish_dsc_using_subcommand ls; and not __fish_seen_subcommand_from tidy help" -s h -l help -d 'Print help'
 complete -c dsc -n "__fish_dsc_using_subcommand ls; and not __fish_seen_subcommand_from tidy help" -f -a "tidy" -d 'Sort discourse entries by name and rewrite config in-place. Also inserts placeholder values for unset template keys'
 complete -c dsc -n "__fish_dsc_using_subcommand ls; and not __fish_seen_subcommand_from tidy help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'

@@ -25,6 +25,8 @@ enum Commands {
     List {
         #[arg(long, short = 'f', value_enum, default_value = "plaintext")]
         format: OutputFormat,
+        #[arg(long, value_name = "tag1,tag2")]
+        tags: Option<String>,
         #[command(subcommand)]
         command: Option<ListCommand>,
     },
@@ -85,7 +87,7 @@ enum EmojiCommand {
     Add {
         discourse: String,
         emoji_path: PathBuf,
-        emoji_name: String,
+        emoji_name: Option<String>,
     },
 
     /// List custom emojis on a Discourse.
@@ -199,11 +201,18 @@ fn main() -> Result<()> {
     let mut config = load_config(&cli.config)?;
 
     match cli.command {
-        Commands::List { format, command } => match command {
+        Commands::List {
+            format,
+            tags,
+            command,
+        } => match command {
             Some(ListCommand::Tidy) => {
+                if tags.is_some() {
+                    return Err(anyhow!("--tags is not supported with 'dsc list tidy'"));
+                }
                 list_tidy(&cli.config, &mut config)?;
             }
-            None => list_discourses(&config, format)?,
+            None => list_discourses(&config, format, tags.as_deref())?,
         },
         Commands::Add { names, interactive } => {
             add_discourses(&mut config, &names, interactive)?;
@@ -236,7 +245,7 @@ fn main() -> Result<()> {
                 discourse,
                 emoji_path,
                 emoji_name,
-            } => add_emoji(&config, &discourse, &emoji_path, &emoji_name)?,
+            } => add_emoji(&config, &discourse, &emoji_path, emoji_name.as_deref())?,
 
             EmojiCommand::List { discourse } => list_emojis(&config, &discourse)?,
         },
@@ -432,10 +441,29 @@ fn inject_zsh_sort_style(mut content: String) -> String {
     format!("{}\n\n{}", style, content)
 }
 
-fn list_discourses(config: &Config, format: OutputFormat) -> Result<()> {
+fn list_discourses(config: &Config, format: OutputFormat, tags: Option<&str>) -> Result<()> {
+    let filter = tags.map(parse_tags).unwrap_or_default();
+    let matches_filter = |disc: &DiscourseConfig| {
+        if filter.is_empty() {
+            return true;
+        }
+        let disc_tags = disc.tags.as_ref().map(|t| {
+            t.iter()
+                .map(|tag| tag.to_ascii_lowercase())
+                .collect::<Vec<_>>()
+        });
+        let Some(disc_tags) = disc_tags else {
+            return false;
+        };
+        filter.iter().any(|tag| {
+            let tag = tag.to_ascii_lowercase();
+            disc_tags.iter().any(|t| t == &tag)
+        })
+    };
+
     match format {
         OutputFormat::Plaintext => {
-            for d in &config.discourse {
+            for d in config.discourse.iter().filter(|d| matches_filter(d)) {
                 let fullname = d.fullname.as_deref().unwrap_or("");
                 if fullname.is_empty() {
                     println!("{} - {}", d.name, d.baseurl);
@@ -445,7 +473,7 @@ fn list_discourses(config: &Config, format: OutputFormat) -> Result<()> {
             }
         }
         OutputFormat::Markdown => {
-            for d in &config.discourse {
+            for d in config.discourse.iter().filter(|d| matches_filter(d)) {
                 let fullname = d.fullname.as_deref().unwrap_or("");
                 if fullname.is_empty() {
                     println!("- {} ({})", d.name, d.baseurl);
@@ -457,23 +485,33 @@ fn list_discourses(config: &Config, format: OutputFormat) -> Result<()> {
         OutputFormat::MarkdownTable => {
             println!("| Name | Full Name | Base URL |");
             println!("| --- | --- | --- |");
-            for d in &config.discourse {
+            for d in config.discourse.iter().filter(|d| matches_filter(d)) {
                 let fullname = d.fullname.as_deref().unwrap_or("");
                 println!("| {} | {} | {} |", d.name, fullname, d.baseurl);
             }
         }
         OutputFormat::Json => {
-            let raw = serde_json::to_string_pretty(&config.discourse)?;
+            let filtered: Vec<_> = config
+                .discourse
+                .iter()
+                .filter(|d| matches_filter(d))
+                .collect();
+            let raw = serde_json::to_string_pretty(&filtered)?;
             println!("{}", raw);
         }
         OutputFormat::Yaml => {
-            let raw = serde_yaml::to_string(&config.discourse)?;
+            let filtered: Vec<_> = config
+                .discourse
+                .iter()
+                .filter(|d| matches_filter(d))
+                .collect();
+            let raw = serde_yaml::to_string(&filtered)?;
             println!("{}", raw);
         }
         OutputFormat::Csv => {
             let mut writer = csv::Writer::from_writer(io::stdout());
             writer.write_record(["name", "fullname", "baseurl", "tags"])?;
-            for d in &config.discourse {
+            for d in config.discourse.iter().filter(|d| matches_filter(d)) {
                 let tags = d.tags.as_ref().map(|t| t.join(";")).unwrap_or_default();
                 let fullname = d.fullname.as_deref().unwrap_or("");
                 writer.write_record([d.name.as_str(), fullname, d.baseurl.as_str(), &tags])?;
@@ -671,14 +709,9 @@ fn update_all(
         ));
     }
     if !concurrent {
-        let date = chrono::Utc::now().format("%Y.%m.%d");
-        let log_path = format!("{}-dsc-update-all.log", date);
-        println!("==> Logging update progress to {}", log_path);
-        let mut log_file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path)
-            .with_context(|| format!("opening update log at {}", log_path))?;
+        let log_path = update_log_path()?;
+        println!("==> Logging update progress to {}", log_path.display());
+        let mut log_file = open_update_log(&log_path)?;
         writeln!(
             log_file,
             "{} update all started",
@@ -805,19 +838,9 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
                     let mut attempts = 0;
                     let max_attempts = 12;
                     while attempts < max_attempts {
-                        match std::process::Command::new("ssh")
-                            .arg("-o")
-                            .arg("BatchMode=yes")
-                            .arg("-o")
-                            .arg("ConnectTimeout=10")
-                            .arg(&target)
-                            .arg("echo 'server is up'")
-                            .output()
-                        {
-                            Ok(output) if output.status.success() => {
-                                break;
-                            }
-                            _ => {
+                        match ssh_probe(&target) {
+                            Ok(true) => break,
+                            Ok(false) | Err(_) => {
                                 attempts += 1;
                                 if attempts < max_attempts {
                                     std::thread::sleep(std::time::Duration::from_secs(30));
@@ -852,10 +875,8 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
 }
 
 fn run_ssh_command(target: &str, command: &str) -> Result<String> {
-    let output = std::process::Command::new("ssh")
-        .arg("-o")
-        .arg("BatchMode=yes")
-        .arg(target)
+    let mut cmd = build_ssh_command(target, &[])?;
+    let output = cmd
         .arg(command)
         .output()
         .with_context(|| format!("running ssh to {}", target))?;
@@ -867,6 +888,96 @@ fn run_ssh_command(target: &str, command: &str) -> Result<String> {
         ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn build_ssh_command(target: &str, extra_options: &[&str]) -> Result<std::process::Command> {
+    validate_ssh_target(target)?;
+    let mut cmd = std::process::Command::new("ssh");
+    cmd.arg("-o").arg("BatchMode=yes");
+    if let Some(strict) = ssh_strict_host_key_checking() {
+        cmd.arg("-o")
+            .arg(format!("StrictHostKeyChecking={}", strict));
+    }
+    for option in extra_options {
+        cmd.arg(option);
+    }
+    if let Ok(raw) = std::env::var("DSC_SSH_OPTIONS") {
+        if !raw.trim().is_empty() {
+            cmd.args(raw.split_whitespace());
+        }
+    }
+    cmd.arg("--").arg(target);
+    Ok(cmd)
+}
+
+fn ssh_strict_host_key_checking() -> Option<String> {
+    let value = std::env::var("DSC_SSH_STRICT_HOST_KEY_CHECKING")
+        .unwrap_or_else(|_| "accept-new".to_string());
+    let value = value.trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn validate_ssh_target(target: &str) -> Result<()> {
+    let trimmed = target.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow!("ssh target is empty"));
+    }
+    if trimmed.starts_with('-') {
+        return Err(anyhow!("ssh target cannot start with '-': {}", target));
+    }
+    if trimmed.chars().any(|ch| ch.is_whitespace()) {
+        return Err(anyhow!("ssh target cannot contain whitespace: {}", target));
+    }
+    Ok(())
+}
+
+fn ssh_probe(target: &str) -> Result<bool> {
+    let mut cmd = build_ssh_command(target, &["-o", "ConnectTimeout=10"])?;
+    let output = cmd
+        .arg("echo 'server is up'")
+        .output()
+        .with_context(|| format!("running ssh to {}", target))?;
+    Ok(output.status.success())
+}
+
+fn update_log_path() -> Result<PathBuf> {
+    let date = chrono::Utc::now().format("%Y.%m.%d");
+    let filename = format!("{}-dsc-update-all.log", date);
+    if let Ok(raw) = std::env::var("DSC_UPDATE_LOG_DIR") {
+        let raw = raw.trim();
+        if !raw.is_empty() {
+            let dir = PathBuf::from(raw);
+            ensure_dir(&dir)?;
+            return Ok(dir.join(filename));
+        }
+    }
+    Ok(PathBuf::from(filename))
+}
+
+fn open_update_log(path: &Path) -> Result<fs::File> {
+    let file = fs::OpenOptions::new()
+        .create_new(true)
+        .append(true)
+        .open(path);
+    match file {
+        Ok(file) => Ok(file),
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
+            let metadata = fs::symlink_metadata(path)
+                .with_context(|| format!("reading {}", path.display()))?;
+            if metadata.file_type().is_symlink() {
+                return Err(anyhow!("update log path is a symlink: {}", path.display()));
+            }
+            fs::OpenOptions::new()
+                .append(true)
+                .open(path)
+                .with_context(|| format!("opening update log at {}", path.display()))
+        }
+        Err(err) => Err(err).with_context(|| format!("opening update log at {}", path.display())),
+    }
 }
 
 fn get_os_version(target: &str) -> Result<Option<String>> {
@@ -950,13 +1061,72 @@ fn add_emoji(
     config: &Config,
     discourse_name: &str,
     emoji_path: &Path,
-    emoji_name: &str,
+    emoji_name: Option<&str>,
 ) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
-    client.upload_emoji(emoji_path, emoji_name)?;
+    if emoji_path.is_dir() {
+        if emoji_name.is_some() {
+            return Err(anyhow!(
+                "emoji name is not allowed when uploading a directory"
+            ));
+        }
+        let mut files = Vec::new();
+        for entry in
+            fs::read_dir(emoji_path).with_context(|| format!("reading {}", emoji_path.display()))?
+        {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if !is_emoji_file(&path) {
+                continue;
+            }
+            files.push(path);
+        }
+        files.sort();
+        if files.is_empty() {
+            return Err(anyhow!("no emoji image files found in directory"));
+        }
+        for path in files {
+            let name = emoji_name_from_path(&path)?;
+            client.upload_emoji(&path, &name)?;
+            println!("uploaded {} from {}", name, path.display());
+        }
+        return Ok(());
+    }
+
+    let name = match emoji_name {
+        Some(name) => name.to_string(),
+        None => emoji_name_from_path(emoji_path)?,
+    };
+    client.upload_emoji(emoji_path, &name)?;
     Ok(())
+}
+
+fn emoji_name_from_path(path: &Path) -> Result<String> {
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| anyhow!("emoji path missing filename: {}", path.display()))?;
+    let slug = slugify(stem);
+    let name = slug.replace('-', "_");
+    if name.is_empty() {
+        return Err(anyhow!("emoji name is empty for {}", path.display()));
+    }
+    Ok(name)
+}
+
+fn is_emoji_file(path: &Path) -> bool {
+    let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "svg"
+    )
 }
 
 fn list_emojis(config: &Config, discourse_name: &str) -> Result<()> {

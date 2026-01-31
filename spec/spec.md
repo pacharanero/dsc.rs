@@ -21,6 +21,8 @@ Global option:
 
 Lists all Discourse installs known to dsc.rs, optionally filtered by tags.
 
+Tag filters accept comma or semicolon separators and match any tag (case-insensitive).
+
 List formats:
 
 - `plaintext` || `txt`(default)
@@ -87,6 +89,9 @@ Environment variables (optional overrides for SSH commands):
 - `DSC_SSH_OS_VERSION_CMD` (default: `lsb_release -d | cut -f2`, fallback to `/etc/os-release`)
 - `DSC_SSH_UPDATE_CMD` (default: `cd /var/discourse && sudo -n ./launcher rebuild app`)
 - `DSC_SSH_CLEANUP_CMD` (default: `cd /var/discourse && sudo -n ./launcher cleanup`)
+- `DSC_SSH_STRICT_HOST_KEY_CHECKING` (default: `accept-new`; set empty to omit)
+- `DSC_SSH_OPTIONS` (extra ssh options, space-delimited)
+- `DSC_UPDATE_LOG_DIR` (directory for `dsc update all` logs; defaults to current directory)
 
 > SSH credentials are not stored in `dsc.toml`; it is advised to set up SSH keys and use an SSH config file.
 
@@ -101,6 +106,7 @@ Notes:
 - Writes a progress log named `YYYY.MM.DD-dsc-update-all.log` in the current working directory.
 - Stops at the first failure to avoid cascading problems.
 - `--concurrent` is disabled for `dsc update all` because it must stop at the first failure.
+- `all` is reserved for `dsc update all`.
 
 > SSH credentials are not stored in `dsc.toml`; it is advised to set up SSH keys and use an SSH config file.
 
@@ -116,9 +122,11 @@ I like to use custom emoji on my forums but the current interface for uploading 
 
 Having a complete set of the Fontawesome icons used in the Discourse UI as Custom Emoji makes it far easier to explain the user interface in posts to users.
 
-### `dsc emoji add <discourse> <emoji-path> <emoji-name>`
+### `dsc emoji add <discourse> <emoji-path> [emoji-name]`
 
-Adds a new emoji to a Discourse install from a local image file.
+Adds a new emoji to a Discourse install from a local image file. If `emoji-name` is omitted, the filename stem is used (slugified; dashes converted to underscores).
+
+If `emoji-path` is a directory, uploads all `.png`, `.jpg`, `.jpeg`, `.gif`, `.svg` files using the filename stem as the emoji name.
 
 ### `dsc emoji list <discourse>`
 
@@ -259,3 +267,14 @@ tags = ["tag1", "tag2"] # optional way to organise installs
 # ssh_host = ""
 # tags = []
 ```
+
+### Release / Distribution
+
+- GitHub Releases ship prebuilt binaries for:
+  - `x86_64-unknown-linux-gnu`
+  - `aarch64-unknown-linux-gnu`
+  - `x86_64-apple-darwin`
+  - `aarch64-apple-darwin`
+  - `x86_64-pc-windows-msvc`
+- crates.io publishing is automated in CI on `v*` tags (requires `CARGO_REGISTRY_TOKEN`).
+- `CHANGELOG.md` should be updated for each release.

@@ -68,7 +68,7 @@ General form: `dsc [--config dsc.toml] <command>`.
 - Import installs from file: `dsc import path/to/urls.txt` or `dsc import path/to/forums.csv`
 - Update one install: `dsc update <name> [--post-changelog]`
 - Update all installs: `dsc update all [--post-changelog]`
-- Add emoji: `dsc emoji add <discourse> <emoji.png> <emoji-name>`
+- Add emoji: `dsc emoji add <discourse> <emoji-path> [emoji-name]`
 - List custom emoji: `dsc emoji list <discourse>`
 - Topic pull: `dsc topic pull <discourse> <topic-id> [local-path]`
 - Topic push: `dsc topic push <discourse> <local-path> <topic-id>`
@@ -83,6 +83,23 @@ General form: `dsc [--config dsc.toml] <command>`.
 - Backup create: `dsc backup create <discourse>`
 - Backup list: `dsc backup list <discourse>`
 - Backup restore: `dsc backup restore <discourse> <backup-path>`
+- List filtered by tags: `dsc list --tags alpha,beta`
+
+## Installation
+
+Prebuilt binaries are published to GitHub Releases for:
+
+- `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
+- `x86_64-apple-darwin`
+- `aarch64-apple-darwin`
+- `x86_64-pc-windows-msvc`
+
+If you have Rust installed, you can also install from crates.io:
+
+```bash
+cargo install dsc
+```
 
 ## Shell completions
 
@@ -112,6 +129,9 @@ Update environment variables (optional overrides for SSH commands):
 - `DSC_SSH_OS_VERSION_CMD` (default: `lsb_release -d | cut -f2`, fallback to `/etc/os-release`)
 - `DSC_SSH_UPDATE_CMD` (default: `cd /var/discourse && sudo -n ./launcher rebuild app`)
 - `DSC_SSH_CLEANUP_CMD` (default: `cd /var/discourse && sudo -n ./launcher cleanup`)
+- `DSC_SSH_STRICT_HOST_KEY_CHECKING` (default: `accept-new`; set empty to omit)
+- `DSC_SSH_OPTIONS` (extra ssh options, space-delimited)
+- `DSC_UPDATE_LOG_DIR` (directory for `dsc update all` logs; defaults to current directory)
 
 Tips:
 
@@ -119,6 +139,9 @@ Tips:
 - `topic pull`/`category pull` write Markdown files; paths are created as needed.
 - `topic sync` compares local mtime with the remote post timestamp; pass `--yes` to skip the prompt.
 - `dsc update all` writes a progress log named `YYYY.MM.DD-dsc-update-all.log` in the current directory and stops at the first failure; `--concurrent` is disabled for this command.
+- `all` is reserved for `dsc update all`.
+- `dsc list --tags` accepts comma or semicolon separators and matches any tag (case-insensitive).
+- `dsc emoji add` accepts a file or directory path. Directory uploads all `.png`, `.jpg`, `.jpeg`, `.gif`, `.svg` files using the filename stem as the emoji name.
 
 ## Development
 
@@ -134,25 +157,12 @@ Releases are automated via Git tags and GitHub Actions using cargo-dist.
 
 Steps:
 
-1. Ensure your working tree is clean and tests pass.
-2. Bump the version in `Cargo.toml` and commit it.
-3. Tag the release as `v<version>` and push the tag.
-
-- If you use `s/release <version>` (for example, `s/release 0.2.0`), it handles the commit + tag + push.
-
-4. The `Release` workflow builds and uploads binaries to GitHub Releases.
-
-Publishing to crates.io (initially manual):
-
-1. Ensure you can publish (you may need to be added as an owner).
-2. Authenticate:
-
-- One-off local login: `cargo login <token>`
-- Or per-command: `CARGO_REGISTRY_TOKEN=<token> cargo publish`
-
-3. Publish: `cargo publish`
-
-If you later want CI to publish to crates.io on tags, add `CARGO_REGISTRY_TOKEN` as a GitHub Actions secret and update the release workflow/cargo-dist config accordingly.
+1. Update `CHANGELOG.md` with release notes.
+2. Ensure your working tree is clean and tests pass.
+3. Run `s/release <version>` (for example, `s/release 0.2.0`).
+4. The script commits the version bump, tags `v<version>`, and pushes.
+5. The `Release` workflow builds and uploads binaries to GitHub Releases.
+6. The `crates-io` job publishes the crate (requires `CARGO_REGISTRY_TOKEN`).
 
 Artifacts include platform-specific archives, checksums, and a shell installer script.
 

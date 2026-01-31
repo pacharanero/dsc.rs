@@ -624,7 +624,7 @@ _dsc() {
             return 0
             ;;
         dsc__emoji__add)
-            opts="-h --help <DISCOURSE> <EMOJI_PATH> <EMOJI_NAME>"
+            opts="-h --help <DISCOURSE> <EMOJI_PATH> [EMOJI_NAME]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1248,7 +1248,7 @@ _dsc() {
             return 0
             ;;
         dsc__list)
-            opts="-f -h --format --help tidy help"
+            opts="-f -h --format --tags --help tidy help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1260,6 +1260,10 @@ _dsc() {
                     ;;
                 -f)
                     COMPREPLY=($(compgen -W "plaintext markdown markdown-table json yaml csv" -- "${cur}"))
+                    return 0
+                    ;;
+                --tags)
+                    COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 *)

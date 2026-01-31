@@ -61,6 +61,41 @@ pub fn load_config(path: &Path) -> Result<Config> {
 /// Save configuration to a TOML file.
 pub fn save_config(path: &Path, config: &Config) -> Result<()> {
     let raw = toml::to_string_pretty(config).with_context(|| "serializing config")?;
+    write_config_file(path, raw.as_bytes())?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn write_config_file(path: &Path, raw: &[u8]) -> Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .mode(0o600)
+        .open(path)
+        .with_context(|| format!("writing {}", path.display()))?;
+    file.write_all(raw)
+        .with_context(|| format!("writing {}", path.display()))?;
+
+    let metadata = fs::metadata(path).with_context(|| format!("reading {}", path.display()))?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode & 0o077 != 0 {
+        if let Err(err) = fs::set_permissions(path, fs::Permissions::from_mode(0o600)) {
+            eprintln!(
+                "Warning: unable to tighten permissions on {}: {}",
+                path.display(),
+                err
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_config_file(path: &Path, raw: &[u8]) -> Result<()> {
     fs::write(path, raw).with_context(|| format!("writing {}", path.display()))?;
     Ok(())
 }

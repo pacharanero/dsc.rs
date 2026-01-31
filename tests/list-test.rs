@@ -16,6 +16,58 @@ fn list() {
 }
 
 #[test]
+fn list_filters_by_tags() {
+    vprintln("e2e_list_tags: filtering by tags");
+    let dir = TempDir::new().expect("tempdir");
+    let config_path = write_temp_config(
+        &dir,
+        r#"[[discourse]]
+name = "one"
+baseurl = "https://one.example"
+tags = ["alpha", "beta"]
+
+[[discourse]]
+name = "two"
+baseurl = "https://two.example"
+tags = ["gamma"]
+
+[[discourse]]
+name = "three"
+baseurl = "https://three.example"
+"#,
+    );
+    let output = run_dsc(
+        &["list", "--tags", "alpha;gamma", "-f", "json"],
+        &config_path,
+    );
+    assert!(output.status.success(), "list with tags failed");
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value = serde_json::from_str(&raw).expect("parse json");
+    let names: Vec<String> = value
+        .as_array()
+        .expect("array")
+        .iter()
+        .filter_map(|item| {
+            item.get("name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
+    assert!(
+        names.contains(&"one".to_string()),
+        "missing 'one' in {names:?}"
+    );
+    assert!(
+        names.contains(&"two".to_string()),
+        "missing 'two' in {names:?}"
+    );
+    assert!(
+        !names.contains(&"three".to_string()),
+        "unexpected 'three' in {names:?}"
+    );
+}
+
+#[test]
 fn list_tidy_sorts_inserts_placeholders_and_reports_missing() {
     vprintln("e2e_list_tidy: sorting config and inserting placeholders");
     let dir = TempDir::new().expect("tempdir");
