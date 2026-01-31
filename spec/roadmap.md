@@ -26,13 +26,14 @@ This is a living checklist of the remaining work to fully implement and/or recon
 
 ## Configuration completeness
 
-- [ ] Decide what `changelog_path` is for (it exists in config but is unused). Either implement local changelog file updating or remove/replace the field.
-- [ ] Decide whether `dsc add --interactive` should prompt for `ssh_host` and `changelog_topic_id` (needed for `update`/`--post-changelog`) or keep those as manual config edits.
+- [x] Decide what `changelog_path` is for (it exists in config but is unused). Either implement local changelog file updating or remove/replace the field.
+- [x] Decide whether `dsc add --interactive` should prompt for `ssh_host` and `changelog_topic_id` (needed for `update`/`--post-changelog`) or keep those as manual config edits.
 
 ## Output / UX follow-ups
 
 - [ ] Add a human-friendly output mode for `backup list` (it currently prints raw JSON), or explicitly document JSON as the intended output.
 - [ ] Consider adding `--format json|yaml` for `group info` and `backup list` for consistency with `dsc list`.
+- [ ] Consider `dsc emoji list --inline` to show emoji images via terminal image protocols (kitty/iTerm2/sixel) with text fallback for unsupported terminals.
 
 ## Testing
 
