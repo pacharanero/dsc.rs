@@ -53,8 +53,12 @@ impl DiscourseClient {
         let value: Value = serde_json::from_str(&text).context("parsing emoji list json")?;
         let emojis = if let Some(arr) = value.as_array() {
             extract_emojis_from_array(arr, self.baseurl())
-        } else if let Some(arr) = value.get("emojis").and_then(|v| v.as_array()) {
-            extract_emojis_from_array(arr, self.baseurl())
+        } else if let Some(val) = value.get("emojis") {
+            extract_emojis_from_value(val, self.baseurl())
+        } else if let Some(val) = value.get("custom_emoji") {
+            extract_emojis_from_value(val, self.baseurl())
+        } else if let Some(val) = value.get("custom") {
+            extract_emojis_from_value(val, self.baseurl())
         } else if let Some(map) = value.as_object() {
             let mut out = Vec::new();
             extract_emojis_from_map(map, self.baseurl(), &mut out);
@@ -82,12 +86,16 @@ impl DiscourseClient {
         let value: Value = serde_json::from_str(&text).context("parsing emoji.json")?;
         let baseurl = self.baseurl().trim_end_matches('/');
         let mut out = Vec::new();
-        if let Some(map) = value.get("custom_emoji").and_then(|v| v.as_object()) {
-            extract_emojis_from_map(map, baseurl, &mut out);
-        } else if let Some(map) = value.get("custom").and_then(|v| v.as_object()) {
-            extract_emojis_from_map(map, baseurl, &mut out);
-        } else if let Some(map) = value.get("emoji").and_then(|v| v.as_object()) {
-            extract_emojis_from_map(map, baseurl, &mut out);
+        if let Some(val) = value.get("custom_emoji") {
+            out.extend(extract_emojis_from_value(val, baseurl));
+        }
+        if let Some(val) = value.get("custom") {
+            out.extend(extract_emojis_from_value(val, baseurl));
+        }
+        if out.is_empty() {
+            if let Some(val) = value.get("emoji") {
+                out.extend(extract_emojis_from_value(val, baseurl));
+            }
         }
         Ok(out)
     }
@@ -117,12 +125,41 @@ fn extract_emojis_from_map(
     out: &mut Vec<CustomEmoji>,
 ) {
     for (name, value) in map.iter() {
-        if let Some(url) = value.as_str() {
+        let url = value
+            .as_str()
+            .or_else(|| value.get("url").and_then(|v| v.as_str()))
+            .or_else(|| value.get("image_url").and_then(|v| v.as_str()))
+            .or_else(|| value.get("path").and_then(|v| v.as_str()));
+        if let Some(url) = url {
             out.push(CustomEmoji {
                 name: name.to_string(),
                 url: normalize_emoji_url(baseurl, url),
             });
         }
+    }
+}
+
+fn extract_emojis_from_value(value: &Value, baseurl: &str) -> Vec<CustomEmoji> {
+    match value {
+        Value::Array(arr) => extract_emojis_from_array(arr, baseurl),
+        Value::Object(map) => {
+            let name = map.get("name").and_then(|v| v.as_str());
+            let url = map
+                .get("url")
+                .and_then(|v| v.as_str())
+                .or_else(|| map.get("image_url").and_then(|v| v.as_str()))
+                .or_else(|| map.get("path").and_then(|v| v.as_str()));
+            if let (Some(name), Some(url)) = (name, url) {
+                return vec![CustomEmoji {
+                    name: name.to_string(),
+                    url: normalize_emoji_url(baseurl, url),
+                }];
+            }
+            let mut out = Vec::new();
+            extract_emojis_from_map(map, baseurl, &mut out);
+            out
+        }
+        _ => Vec::new(),
     }
 }
 
