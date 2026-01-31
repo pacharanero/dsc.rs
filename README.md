@@ -53,10 +53,11 @@ Notes:
 - `baseurl` should not end with a trailing slash.
 - `fullname` is the Discourse site title (auto-populated when adding/importing if it can be fetched).
 - `ssh_host` enables `update` over SSH (`./launcher rebuild app`). Configure keys in your SSH config.
-- `changelog_topic_id` is required if you want `--post-changelog` to post a checklist update.
+- `changelog_topic_id` is required if you want `--post-changelog` to prompt and post a checklist update.
 - `tags` (optional) can label installs; they are emitted in list output formats.
 - Most forum read/write commands require `apikey` and `api_username`. If they are missing, `dsc` will fail with a clear message.
 - `dsc add` without `--interactive` appends a full `[[discourse]]` template containing every supported config key, using placeholders like `""`, `[]`, and `0`.
+- `dsc add --interactive` now prompts for `ssh_host` and `changelog_topic_id` (optional; blank keeps them unset).
 - Empty strings and `0` values are treated as “unset” (most commands behave as if the key is missing).
 
 ## Usage
@@ -68,6 +69,7 @@ General form: `dsc [--config dsc.toml] <command>`.
 - Import installs from file: `dsc import path/to/urls.txt` or `dsc import path/to/forums.csv`
 - Update one install: `dsc update <name> [--post-changelog]`
 - Update all installs: `dsc update all [--post-changelog]`
+  - `--post-changelog` prints the checklist and prompts before posting.
 - Add emoji: `dsc emoji add <discourse> <emoji-path> [emoji-name]`
 - List custom emoji: `dsc emoji list <discourse>`
 - Topic pull: `dsc topic pull <discourse> <topic-id> [local-path]`
