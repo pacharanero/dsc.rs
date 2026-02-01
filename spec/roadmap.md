@@ -25,6 +25,8 @@ This is a living checklist of the remaining work to fully implement and/or recon
 - [x] Add a human-friendly output mode for `backup list` (it currently prints raw JSON), or explicitly document JSON as the intended output.
 - [x] Consider adding `--format json|yaml` for `group info` and `backup list` for consistency with `dsc list`.
 - [x] Add the ability to change a Site Setting on all Discourses (or selected by tag) via the API.
+- [x] Ensure proper error handling and rollback capabilities for failed OS updates.
+- [x] Backup feature should be able to say when the last backup was done, and where the backup is stored (eg S3).
 
 ## In Progress
 
@@ -32,10 +34,8 @@ This is a living checklist of the remaining work to fully implement and/or recon
 
 ## Planned
 
-- [ ] Ensure proper error handling and rollback capabilities for failed OS updates.
 
 ## Future
-- [ ] Backup feature should be able to say when the last backup was done, and where the backup is stored (eg S3).
 - [ ] Add ability to push and pull colour palettes, as there is no obvious "import" at the moment.
 - [ ] Add ability to manage plugins via the CLI - eg list installed plugins, install new plugins, remove plugins.
 - [ ] Add ability to manage themes via the CLI - eg list installed themes, install new themes, remove themes.

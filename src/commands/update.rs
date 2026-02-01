@@ -135,35 +135,40 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
     let mut os_updated = false;
     let mut server_rebooted = false;
 
-    match run_ssh_command(&target, &os_update_cmd) {
-        Ok(_) => {
-            os_updated = true;
-            if run_ssh_command(&target, &reboot_cmd).is_ok() {
-                server_rebooted = true;
-                if std::env::var("DSC_SSH_OS_UPDATE_CMD").unwrap_or_default()
-                    != "echo OS packages updated"
-                {
-                    std::thread::sleep(std::time::Duration::from_secs(30));
-                    let mut attempts = 0;
-                    let max_attempts = 12;
-                    while attempts < max_attempts {
-                        match ssh_probe(&target) {
-                            Ok(true) => break,
-                            Ok(false) | Err(_) => {
-                                attempts += 1;
-                                if attempts < max_attempts {
-                                    std::thread::sleep(std::time::Duration::from_secs(30));
-                                }
-                            }
+    if let Err(err) = run_ssh_command(&target, &os_update_cmd) {
+        if let Some(rollback_cmd) = os_update_rollback_cmd() {
+            if let Err(rollback_err) = run_ssh_command(&target, &rollback_cmd) {
+                eprintln!(
+                    "Warning: OS update rollback failed for {}: {}",
+                    target, rollback_err
+                );
+            }
+        }
+        return Err(anyhow!("OS update failed for {}: {}", target, err));
+    }
+    os_updated = true;
+    if run_ssh_command(&target, &reboot_cmd).is_ok() {
+        server_rebooted = true;
+        if std::env::var("DSC_SSH_OS_UPDATE_CMD").unwrap_or_default() != "echo OS packages updated"
+        {
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            let mut attempts = 0;
+            let max_attempts = 12;
+            while attempts < max_attempts {
+                match ssh_probe(&target) {
+                    Ok(true) => break,
+                    Ok(false) | Err(_) => {
+                        attempts += 1;
+                        if attempts < max_attempts {
+                            std::thread::sleep(std::time::Duration::from_secs(30));
                         }
-                    }
-                    if attempts >= max_attempts {
-                        return Err(anyhow!("Server did not come back online after reboot"));
                     }
                 }
             }
+            if attempts >= max_attempts {
+                return Err(anyhow!("Server did not come back online after reboot"));
+            }
         }
-        Err(_) => {}
     }
 
     run_ssh_command(&target, &discourse_update_cmd)?;
@@ -309,6 +314,16 @@ fn parse_reclaimed_space(output: &str) -> Option<String> {
         .lines()
         .find_map(|line| line.split("Total reclaimed space:").nth(1))
         .map(|value| value.trim().to_string())
+}
+
+fn os_update_rollback_cmd() -> Option<String> {
+    let raw = std::env::var("DSC_SSH_OS_UPDATE_ROLLBACK_CMD").unwrap_or_default();
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 fn build_changelog_payload(metadata: Option<&UpdateMetadata>) -> String {

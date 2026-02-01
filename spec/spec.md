@@ -85,6 +85,7 @@ Flags:
 Environment variables (optional overrides for SSH commands):
 
 - `DSC_SSH_OS_UPDATE_CMD` (default: `sudo -n DEBIAN_FRONTEND=noninteractive apt update && sudo -n DEBIAN_FRONTEND=noninteractive apt upgrade -y`)
+- `DSC_SSH_OS_UPDATE_ROLLBACK_CMD` (optional command to run if OS update fails)
 - `DSC_SSH_REBOOT_CMD` (default: `sudo -n reboot`)
 - `DSC_SSH_OS_VERSION_CMD` (default: `lsb_release -d | cut -f2`, fallback to `/etc/os-release`)
 - `DSC_SSH_UPDATE_CMD` (default: `cd /var/discourse && sudo -n ./launcher rebuild app`)
@@ -94,6 +95,8 @@ Environment variables (optional overrides for SSH commands):
 - `DSC_UPDATE_LOG_DIR` (directory for `dsc update all` logs; defaults to current directory)
 
 > SSH credentials are not stored in `dsc.toml`; it is advised to set up SSH keys and use an SSH config file.
+
+If the OS update command fails, `dsc update` aborts after attempting the rollback command (when configured).
 
 Note: most forum read/write commands require `apikey` and `api_username`; if missing, the command fails with a clear message.
 
@@ -129,6 +132,8 @@ Adds a new emoji to a Discourse install from a local image file. If `emoji-name`
 If `emoji-path` is a directory, uploads all `.png`, `.jpg`, `.jpeg`, `.gif`, `.svg` files using the filename stem as the emoji name.
 
 Requires an admin API key and username.
+
+If your instance requires a `client_id` query parameter for admin emoji endpoints, set `DSC_EMOJI_CLIENT_ID` to append it automatically.
 
 ### `dsc emoji list <discourse>`
 

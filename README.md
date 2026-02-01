@@ -126,6 +126,7 @@ If you omit `--dir`, the completion script is printed to stdout so you can redir
 Update environment variables (optional overrides for SSH commands):
 
 - `DSC_SSH_OS_UPDATE_CMD` (default: `sudo -n DEBIAN_FRONTEND=noninteractive apt update && sudo -n DEBIAN_FRONTEND=noninteractive apt upgrade -y`)
+- `DSC_SSH_OS_UPDATE_ROLLBACK_CMD` (optional command to run if OS update fails)
 - `DSC_SSH_REBOOT_CMD` (default: `sudo -n reboot`)
 - `DSC_SSH_OS_VERSION_CMD` (default: `lsb_release -d | cut -f2`, fallback to `/etc/os-release`)
 - `DSC_SSH_UPDATE_CMD` (default: `cd /var/discourse && sudo -n ./launcher rebuild app`)
@@ -145,6 +146,7 @@ Tips:
 - `dsc backup list --format` supports the same formats as `dsc list`.
 - `dsc emoji add` accepts a file or directory path. Directory uploads all `.png`, `.jpg`, `.jpeg`, `.gif`, `.svg` files using the filename stem as the emoji name.
 - `dsc emoji add`/`dsc emoji list` require an admin API key and username.
+- If your instance requires a `client_id` query parameter for admin emoji endpoints, set `DSC_EMOJI_CLIENT_ID`.
 
 ## Development
 
