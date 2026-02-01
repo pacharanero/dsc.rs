@@ -3,9 +3,13 @@ name = "dsc"
 version = "0.1.2"
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/pacharanero/dsc.rs"
 
-[package.metadata.dist]
-cargo-dist-version = "0.11.1"
+[workspace]
+members = ["."]
+
+[workspace.metadata.dist]
+cargo-dist-version = "0.30.3"
 ci = "github"
 installers = ["shell"]
 targets = [
