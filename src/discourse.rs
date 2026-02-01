@@ -4,6 +4,7 @@ mod client;
 mod emoji;
 mod groups;
 mod models;
+mod palettes;
 mod settings;
 mod topics;
 

@@ -78,6 +78,9 @@ General form: `dsc [--config dsc.toml] <command>`.
 - Category pull: `dsc category pull <discourse> <category-id> [local-path]`
 - Category push: `dsc category push <discourse> <local-path> <category-id>`
 - Category copy: `dsc category copy <discourse> <category-id>`
+- Palette list: `dsc palette list <discourse>`
+- Palette pull: `dsc palette pull <discourse> <palette-id> [local-path]`
+- Palette push: `dsc palette push <discourse> <local-path> [palette-id]`
 - Group list: `dsc group list <discourse>`
 - Group info: `dsc group info <discourse> <group-id> [--format json|yaml]`
 - Group copy: `dsc group copy <source> <group-id> [--target <target>]`
@@ -185,6 +188,7 @@ api_username = "system"
 changelog_topic_id = 123        # optional unless testing update --post-changelog
 test_topic_id = 456             # topic used by e2e topic tests
 test_category_id = 789          # category used by e2e category tests
+test_color_scheme_id = 321      # palette used by e2e palette tests
 emoji_path = "./smile.png"     # optional; enables emoji add test
 emoji_name = "smile"
 ```

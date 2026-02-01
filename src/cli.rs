@@ -60,6 +60,10 @@ pub enum Commands {
         #[command(subcommand)]
         command: BackupCommand,
     },
+    Palette {
+        #[command(subcommand)]
+        command: PaletteCommand,
+    },
     Setting {
         #[command(subcommand)]
         command: SettingCommand,
@@ -167,6 +171,23 @@ pub enum BackupCommand {
     Restore {
         discourse: String,
         backup_path: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PaletteCommand {
+    List {
+        discourse: String,
+    },
+    Pull {
+        discourse: String,
+        palette_id: u64,
+        local_path: Option<PathBuf>,
+    },
+    Push {
+        discourse: String,
+        local_path: PathBuf,
+        palette_id: Option<u64>,
     },
 }
 

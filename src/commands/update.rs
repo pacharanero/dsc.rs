@@ -132,7 +132,6 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
     let cleanup_cmd = std::env::var("DSC_SSH_CLEANUP_CMD")
         .unwrap_or_else(|_| "cd /var/discourse && sudo -n ./launcher cleanup".to_string());
 
-    let mut os_updated = false;
     let mut server_rebooted = false;
 
     if let Err(err) = run_ssh_command(&target, &os_update_cmd) {
@@ -146,7 +145,7 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
         }
         return Err(anyhow!("OS update failed for {}: {}", target, err));
     }
-    os_updated = true;
+    let os_updated = true;
     if run_ssh_command(&target, &reboot_cmd).is_ok() {
         server_rebooted = true;
         if std::env::var("DSC_SSH_OS_UPDATE_CMD").unwrap_or_default() != "echo OS packages updated"

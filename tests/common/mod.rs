@@ -38,6 +38,7 @@ pub struct TestDiscourse {
     pub ssh_host: Option<String>,
     pub test_topic_id: Option<u64>,
     pub test_category_id: Option<u64>,
+    pub test_color_scheme_id: Option<u64>,
     pub test_group_id: Option<u64>,
     pub ssh_enabled: Option<bool>,
     pub emoji_path: Option<String>,

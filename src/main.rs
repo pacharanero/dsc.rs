@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use dsc::cli::{
     BackupCommand, CategoryCommand, Cli, Commands, EmojiCommand, GroupCommand, ListCommand,
-    SettingCommand, TopicCommand,
+    PaletteCommand, SettingCommand, TopicCommand,
 };
 use dsc::commands;
 use dsc::config::{load_config, save_config};
@@ -132,6 +132,26 @@ fn main() -> Result<()> {
                 discourse,
                 backup_path,
             } => commands::backup::backup_restore(&config, &discourse, &backup_path)?,
+        },
+        Commands::Palette { command } => match command {
+            PaletteCommand::List { discourse } => {
+                commands::palette::palette_list(&config, &discourse)?;
+            }
+            PaletteCommand::Pull {
+                discourse,
+                palette_id,
+                local_path,
+            } => commands::palette::palette_pull(
+                &config,
+                &discourse,
+                palette_id,
+                local_path.as_deref(),
+            )?,
+            PaletteCommand::Push {
+                discourse,
+                local_path,
+                palette_id,
+            } => commands::palette::palette_push(&config, &discourse, &local_path, palette_id)?,
         },
         Commands::Setting { command } => match command {
             SettingCommand::Set {
