@@ -187,7 +187,7 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
     })
 }
 
-fn run_ssh_command(target: &str, command: &str) -> Result<String> {
+pub(crate) fn run_ssh_command(target: &str, command: &str) -> Result<String> {
     let mut cmd = build_ssh_command(target, &[])?;
     let output = cmd
         .arg(command)

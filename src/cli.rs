@@ -64,6 +64,10 @@ pub enum Commands {
         #[command(subcommand)]
         command: PaletteCommand,
     },
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommand,
+    },
     Setting {
         #[command(subcommand)]
         command: SettingCommand,
@@ -189,6 +193,13 @@ pub enum PaletteCommand {
         local_path: PathBuf,
         palette_id: Option<u64>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum PluginCommand {
+    List { discourse: String },
+    Install { discourse: String, url: String },
+    Remove { discourse: String, name: String },
 }
 
 #[derive(Subcommand)]

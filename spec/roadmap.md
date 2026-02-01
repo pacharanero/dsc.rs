@@ -28,6 +28,7 @@ This is a living checklist of the remaining work to fully implement and/or recon
 - [x] Ensure proper error handling and rollback capabilities for failed OS updates.
 - [x] Backup feature should be able to say when the last backup was done, and where the backup is stored (eg S3).
 - [x] Add ability to push and pull colour palettes, as there is no obvious "import" at the moment.
+- [x] Add ability to manage plugins via the CLI - eg list installed plugins, install new plugins, remove plugins.
 
 ## In Progress
 
@@ -37,6 +38,5 @@ This is a living checklist of the remaining work to fully implement and/or recon
 
 
 ## Future
-- [ ] Add ability to manage plugins via the CLI - eg list installed plugins, install new plugins, remove plugins.
 - [ ] Add ability to manage themes via the CLI - eg list installed themes, install new themes, remove themes.
 - [ ] Consider `dsc emoji list --inline` to show emoji images via terminal image protocols (kitty/iTerm2/sixel) with text fallback for unsupported terminals.

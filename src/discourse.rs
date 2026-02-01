@@ -5,6 +5,7 @@ mod emoji;
 mod groups;
 mod models;
 mod palettes;
+mod plugins;
 mod settings;
 mod topics;
 

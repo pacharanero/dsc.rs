@@ -90,6 +90,8 @@ Environment variables (optional overrides for SSH commands):
 - `DSC_SSH_OS_VERSION_CMD` (default: `lsb_release -d | cut -f2`, fallback to `/etc/os-release`)
 - `DSC_SSH_UPDATE_CMD` (default: `cd /var/discourse && sudo -n ./launcher rebuild app`)
 - `DSC_SSH_CLEANUP_CMD` (default: `cd /var/discourse && sudo -n ./launcher cleanup`)
+- `DSC_SSH_PLUGIN_INSTALL_CMD` (template command for `dsc plugin install`; supports `{url}` and `{name}`)
+- `DSC_SSH_PLUGIN_REMOVE_CMD` (template command for `dsc plugin remove`; supports `{name}` and `{url}`)
 - `DSC_SSH_STRICT_HOST_KEY_CHECKING` (default: `accept-new`; set empty to omit)
 - `DSC_SSH_OPTIONS` (extra ssh options, space-delimited)
 - `DSC_UPDATE_LOG_DIR` (directory for `dsc update all` logs; defaults to current directory)
@@ -212,6 +214,24 @@ If `<local-path>` is omitted, writes `palette-<id>.json` in the current director
 
 Updates the specified palette with the colors in the local file.
 If `<palette-id>` is omitted, a new palette is created and the file is updated with the new ID.
+
+---
+
+## Plugins
+
+### `dsc plugin list <discourse>`
+
+Lists installed plugins on the specified Discourse.
+
+### `dsc plugin install <discourse> <url>`
+
+Installs a plugin using the SSH command template in `DSC_SSH_PLUGIN_INSTALL_CMD`.
+Supports `{url}` and `{name}` placeholders in the template.
+
+### `dsc plugin remove <discourse> <name>`
+
+Removes a plugin using the SSH command template in `DSC_SSH_PLUGIN_REMOVE_CMD`.
+Supports `{name}` and `{url}` placeholders in the template.
 
 ---
 

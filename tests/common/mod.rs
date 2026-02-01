@@ -43,6 +43,8 @@ pub struct TestDiscourse {
     pub ssh_enabled: Option<bool>,
     pub emoji_path: Option<String>,
     pub emoji_name: Option<String>,
+    pub test_plugin_url: Option<String>,
+    pub test_plugin_name: Option<String>,
     pub backup_enabled: Option<bool>,
     pub test_backup_path: Option<String>,
 }
