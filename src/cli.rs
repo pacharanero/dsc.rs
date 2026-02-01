@@ -60,6 +60,10 @@ pub enum Commands {
         #[command(subcommand)]
         command: BackupCommand,
     },
+    Setting {
+        #[command(subcommand)]
+        command: SettingCommand,
+    },
     Completions {
         #[arg(value_enum)]
         shell: CompletionShell,
@@ -139,6 +143,8 @@ pub enum GroupCommand {
     Info {
         discourse: String,
         group: u64,
+        #[arg(long, short = 'f', value_enum, default_value = "json")]
+        format: StructuredFormat,
     },
     Copy {
         discourse: String,
@@ -155,10 +161,22 @@ pub enum BackupCommand {
     },
     List {
         discourse: String,
+        #[arg(long, short = 'f', value_enum, default_value = "plaintext")]
+        format: OutputFormat,
     },
     Restore {
         discourse: String,
         backup_path: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SettingCommand {
+    Set {
+        setting: String,
+        value: String,
+        #[arg(long, value_name = "tag1,tag2")]
+        tags: Option<String>,
     },
 }
 
@@ -187,4 +205,10 @@ pub enum OutputFormat {
     Json,
     Yaml,
     Csv,
+}
+
+#[derive(ValueEnum, Clone, Copy)]
+pub enum StructuredFormat {
+    Json,
+    Yaml,
 }

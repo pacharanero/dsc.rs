@@ -48,7 +48,7 @@ Adds one or more Discourses to `dsc.toml`, creating one entry per name.
 
   Empty strings (`""`) and `0` are treated as **unset** when the config is loaded (they are converted to `None` internally), so leaving placeholders in place is equivalent to leaving the field blank.
 
-- `--interactive` (or `-i`) prompts for base URL, API key, username, and tags. Fields not prompted for are left unset and may be omitted from the written TOML.
+- `--interactive` (or `-i`) prompts for base URL, API key, username, tags, ssh_host, and changelog_topic_id. Fields can be left blank to stay unset.
 
 ### `dsc import [<path>]`
 
@@ -78,7 +78,7 @@ Version and cleanup data should be collected during the update and used to fill 
 
 Flags:
 
-- `--post-changelog` (or `-p`) posts the checklist to `changelog_topic_id`.
+- `--post-changelog` (or `-p`) prints the checklist to stdout and prompts before posting to `changelog_topic_id`.
 - `--concurrent` (or `-C`) is disabled for `dsc update all` because updates stop at first failure.
 - `--max <n>` (or `-m <n>`) is ignored when `--concurrent` is disabled.
 
@@ -198,7 +198,7 @@ Lists all groups in the specified Discourse install, with their IDs, names, and 
 
 List formats are the same as `dsc list`.
 
-### `dsc group info <discourse> <group-id>`
+### `dsc group info <discourse> <group-id> [--format json|yaml]`
 
 ### `dsc group copy <source-discourse> <group-id> [--target <target-discourse>]`
 
@@ -221,7 +221,9 @@ Copy behaviour:
 Creates a backup on the specified Discourse install.
 It doesn't download the backup, just triggers its creation on the server side.
 
-### `dsc backup list <discourse>`
+### `dsc backup list <discourse> [--format <format>]`
+
+Backup list supports the same formats as `dsc list`.
 
 Lists all backups on the specified Discourse install.
 
@@ -231,6 +233,15 @@ Restores the specified backup on the specified Discourse install.
 
 NOTES: where are these stored locally?
 `<backup-path>` can be found using `dsc backup list <discourse>`.
+
+---
+
+## Site Settings
+
+### `dsc setting set <setting> <value> [--tags <tag1,tag2>]`
+
+Updates a site setting across all configured Discourses, optionally filtered by tags (matches any tag, case-insensitive).
+Requires an admin API key and username for each target Discourse.
 
 ---
 
@@ -249,7 +260,6 @@ baseurl = "https://forum.example.com"
 apikey = "your_api_key_here"
 api_username = "system"
 fullname = "My Forum" # Discourse site title (optional)
-changelog_path = "path/to/changelog.md"
 changelog_topic_id = 123
 ssh_host = "myforum" # optional SSH config host name used for updates
 enabled = true # optional; defaults to true
@@ -262,7 +272,6 @@ tags = ["tag1", "tag2"] # optional way to organise installs
 # Example placeholders (as written by non-interactive `dsc add`):
 # apikey = ""
 # api_username = ""
-# changelog_path = ""
 # changelog_topic_id = 0
 # ssh_host = ""
 # tags = []

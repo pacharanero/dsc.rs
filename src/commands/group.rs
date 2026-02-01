@@ -1,3 +1,4 @@
+use crate::cli::StructuredFormat;
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
 use crate::discourse::DiscourseClient;
@@ -16,7 +17,12 @@ pub fn group_list(config: &Config, discourse_name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn group_info(config: &Config, discourse_name: &str, group_id: u64) -> Result<()> {
+pub fn group_info(
+    config: &Config,
+    discourse_name: &str,
+    group_id: u64,
+    format: StructuredFormat,
+) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
@@ -26,8 +32,16 @@ pub fn group_info(config: &Config, discourse_name: &str, group_id: u64) -> Resul
         .find(|item| item.id == group_id)
         .ok_or_else(|| anyhow!("group not found"))?;
     let group = client.fetch_group_detail(group_summary.id, Some(&group_summary.name))?;
-    let raw = serde_json::to_string_pretty(&group)?;
-    println!("{}", raw);
+    match format {
+        StructuredFormat::Json => {
+            let raw = serde_json::to_string_pretty(&group)?;
+            println!("{}", raw);
+        }
+        StructuredFormat::Yaml => {
+            let raw = serde_yaml::to_string(&group)?;
+            println!("{}", raw);
+        }
+    }
     Ok(())
 }
 

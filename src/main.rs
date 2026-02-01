@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use dsc::cli::{
     BackupCommand, CategoryCommand, Cli, Commands, EmojiCommand, GroupCommand, ListCommand,
-    TopicCommand,
+    SettingCommand, TopicCommand,
 };
 use dsc::commands;
 use dsc::config::{load_config, save_config};
@@ -108,8 +108,12 @@ fn main() -> Result<()> {
         },
         Commands::Group { command } => match command {
             GroupCommand::List { discourse } => commands::group::group_list(&config, &discourse)?,
-            GroupCommand::Info { discourse, group } => {
-                commands::group::group_info(&config, &discourse, group)?;
+            GroupCommand::Info {
+                discourse,
+                group,
+                format,
+            } => {
+                commands::group::group_info(&config, &discourse, group, format)?;
             }
             GroupCommand::Copy {
                 discourse,
@@ -121,13 +125,20 @@ fn main() -> Result<()> {
             BackupCommand::Create { discourse } => {
                 commands::backup::backup_create(&config, &discourse)?;
             }
-            BackupCommand::List { discourse } => {
-                commands::backup::backup_list(&config, &discourse)?;
+            BackupCommand::List { discourse, format } => {
+                commands::backup::backup_list(&config, &discourse, format)?;
             }
             BackupCommand::Restore {
                 discourse,
                 backup_path,
             } => commands::backup::backup_restore(&config, &discourse, &backup_path)?,
+        },
+        Commands::Setting { command } => match command {
+            SettingCommand::Set {
+                setting,
+                value,
+                tags,
+            } => commands::setting::set_site_setting(&config, &setting, &value, tags.as_deref())?,
         },
         Commands::Completions { shell, dir } => {
             commands::completions::write_completions(shell, dir.as_deref())?;

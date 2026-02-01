@@ -7,5 +7,6 @@ pub mod emoji;
 pub mod group;
 pub mod import;
 pub mod list;
+pub mod setting;
 pub mod topic;
 pub mod update;
