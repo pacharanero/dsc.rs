@@ -1,9 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::Parser;
-use dsc::cli::{
-    BackupCommand, CategoryCommand, Cli, Commands, EmojiCommand, GroupCommand, ListCommand,
-    PaletteCommand, PluginCommand, SettingCommand, ThemeCommand, TopicCommand,
-};
+use dsc::cli::*;
 use dsc::commands;
 use dsc::config::{load_config, save_config};
 
@@ -13,57 +10,70 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::List {
-            format,
+            command: Some(ListCommand::Tidy),
             tags,
-            command,
-        } => match command {
-            Some(ListCommand::Tidy) => {
-                if tags.is_some() {
-                    return Err(anyhow!("--tags is not supported with 'dsc list tidy'"));
-                }
-                commands::list::list_tidy(&cli.config, &mut config)?;
+            ..
+        } => {
+            if tags.is_some() {
+                return Err(anyhow!("--tags is not supported with 'dsc list tidy'"));
             }
-            None => commands::list::list_discourses(&config, format, tags.as_deref())?,
-        },
+            commands::list::list_tidy(&cli.config, &mut config)?;
+        }
+
+        Commands::List { format, tags, .. } => {
+            commands::list::list_discourses(&config, format, tags.as_deref())?;
+        }
+
         Commands::Add { names, interactive } => {
             commands::add::add_discourses(&mut config, &names, interactive)?;
             save_config(&cli.config, &config)?;
         }
+
         Commands::Import { path } => {
             commands::import::import_discourses(&mut config, path.as_deref())?;
             save_config(&cli.config, &config)?;
         }
+
         Commands::Update {
             name,
             concurrent,
             max,
             post_changelog,
-        } => {
-            if name != "all" && (concurrent || max.is_some()) {
-                return Err(anyhow!("--concurrent/--max only apply to 'dsc update all'"));
-            }
-            if name == "all" {
-                if max.is_some() && !concurrent {
-                    return Err(anyhow!("--max requires --concurrent"));
-                }
-                commands::update::update_all(&config, concurrent, max, post_changelog)?;
-            } else {
-                commands::update::update_one(&config, &name, post_changelog)?;
-            }
-        }
-        Commands::Emoji { command } => match command {
-            EmojiCommand::Add {
-                discourse,
-                emoji_path,
-                emoji_name,
-            } => {
-                commands::emoji::add_emoji(&config, &discourse, &emoji_path, emoji_name.as_deref())?
+        } => match name.as_str() {
+            "all" if max.is_some() && !concurrent => {
+                return Err(anyhow!("--max requires --concurrent"));
             }
 
-            EmojiCommand::List { discourse, inline } => {
-                commands::emoji::list_emojis(&config, &discourse, inline)?;
+            "all" => {
+                commands::update::update_all(&config, concurrent, max, post_changelog)?;
+            }
+
+            _ if concurrent || max.is_some() => {
+                return Err(anyhow!("--concurrent/--max only apply to 'dsc update all'"));
+            }
+
+            _ => {
+                commands::update::update_one(&config, &name, post_changelog)?;
             }
         },
+
+        Commands::Emoji {
+            command:
+                EmojiCommand::Add {
+                    discourse,
+                    emoji_path,
+                    emoji_name,
+                },
+        } => {
+            commands::emoji::add_emoji(&config, &discourse, &emoji_path, emoji_name.as_deref())?;
+        }
+
+        Commands::Emoji {
+            command: EmojiCommand::List { discourse, inline },
+        } => {
+            commands::emoji::list_emojis(&config, &discourse, inline)?;
+        }
+
         Commands::Topic { command } => match command {
             TopicCommand::Pull {
                 discourse,
@@ -82,6 +92,7 @@ fn main() -> Result<()> {
                 yes,
             } => commands::topic::topic_sync(&config, &discourse, topic_id, &local_path, yes)?,
         },
+
         Commands::Category { command } => match command {
             CategoryCommand::List { discourse, tree } => {
                 commands::category::category_list(&config, &discourse, tree)?;
@@ -106,6 +117,7 @@ fn main() -> Result<()> {
                 category_id,
             } => commands::category::category_push(&config, &discourse, category_id, &local_path)?,
         },
+
         Commands::Group { command } => match command {
             GroupCommand::List { discourse } => commands::group::group_list(&config, &discourse)?,
             GroupCommand::Info {
@@ -121,6 +133,7 @@ fn main() -> Result<()> {
                 group,
             } => commands::group::group_copy(&config, &discourse, target.as_deref(), group)?,
         },
+
         Commands::Backup { command } => match command {
             BackupCommand::Create { discourse } => {
                 commands::backup::backup_create(&config, &discourse)?;
@@ -133,6 +146,7 @@ fn main() -> Result<()> {
                 backup_path,
             } => commands::backup::backup_restore(&config, &discourse, &backup_path)?,
         },
+
         Commands::Palette { command } => match command {
             PaletteCommand::List { discourse } => {
                 commands::palette::palette_list(&config, &discourse)?;
@@ -153,6 +167,7 @@ fn main() -> Result<()> {
                 palette_id,
             } => commands::palette::palette_push(&config, &discourse, &local_path, palette_id)?,
         },
+
         Commands::Plugin { command } => match command {
             PluginCommand::List { discourse } => {
                 commands::plugin::plugin_list(&config, &discourse)?;
@@ -164,6 +179,7 @@ fn main() -> Result<()> {
                 commands::plugin::plugin_remove(&config, &discourse, &name)?;
             }
         },
+
         Commands::Theme { command } => match command {
             ThemeCommand::List { discourse } => {
                 commands::theme::theme_list(&config, &discourse)?;
@@ -175,13 +191,16 @@ fn main() -> Result<()> {
                 commands::theme::theme_remove(&config, &discourse, &name)?;
             }
         },
-        Commands::Setting { command } => match command {
-            SettingCommand::Set {
-                setting,
-                value,
-                tags,
-            } => commands::setting::set_site_setting(&config, &setting, &value, tags.as_deref())?,
-        },
+
+        Commands::Setting {
+            command:
+                SettingCommand::Set {
+                    setting,
+                    value,
+                    tags,
+                },
+        } => commands::setting::set_site_setting(&config, &setting, &value, tags.as_deref())?,
+
         Commands::Completions { shell, dir } => {
             commands::completions::write_completions(shell, dir.as_deref())?;
         }
