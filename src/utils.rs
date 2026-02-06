@@ -12,6 +12,7 @@ pub fn slugify(input: &str) -> String {
     let out = input
         .to_ascii_lowercase()
         .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|s| s.is_empty())
         .collect::<Vec<_>>()
         .join("-")
         .trim_end_matches('-')
