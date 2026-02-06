@@ -10,6 +10,7 @@ pub fn normalize_baseurl(baseurl: &str) -> String {
 /// Create a URL-safe slug from arbitrary input.
 pub fn slugify(input: &str) -> String {
     let out = input
+        .to_ascii_lowercase()
         .split(|c: char| !c.is_ascii_alphanumeric())
         .collect::<Vec<_>>()
         .join("-")
