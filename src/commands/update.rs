@@ -2,8 +2,14 @@ use crate::commands::common::ensure_api_credentials;
 use crate::config::{find_discourse, Config, DiscourseConfig};
 use crate::discourse::DiscourseClient;
 use anyhow::{anyhow, Context, Result};
+use indicatif::{ProgressBar, ProgressStyle};
+use std::collections::VecDeque;
 use std::io::{self, Write};
+use std::io::{BufRead, BufReader};
+use std::process::Stdio;
+use std::sync::mpsc;
 use std::thread;
+use std::time::Duration;
 
 pub fn update_one(config: &Config, name: &str, post_changelog: bool) -> Result<()> {
     let discourse = find_discourse(config, name).ok_or_else(|| anyhow!("unknown discourse"))?;
@@ -72,12 +78,53 @@ struct UpdateMetadata {
 
 fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
     let client = DiscourseClient::new(discourse)?;
-    let before_version = client.fetch_version().unwrap_or(None);
     let target = discourse
         .ssh_host
         .clone()
         .unwrap_or_else(|| discourse.name.clone());
-    let before_os_version = get_os_version(&target)?;
+    println!("\n==> Updating {} ({})", discourse.name, target);
+    stage(&target, "Fetching Discourse version (before update)");
+    let before_version = match client.fetch_version() {
+        Ok(version) => {
+            let label = version.as_deref().unwrap_or("unknown");
+            stage(
+                &target,
+                &format!("Initial Discourse Version (before update): {}", label),
+            );
+            version
+        }
+        Err(err) => {
+            stage(
+                &target,
+                &format!(
+                    "Initial Discourse Version (before update): unknown (fetch failed: {})",
+                    err
+                ),
+            );
+            None
+        }
+    };
+    stage(&target, "Fetching OS version (before update)");
+    let before_os_version = match get_os_version(&target) {
+        Ok(version) => {
+            let label = version.as_deref().unwrap_or("unknown");
+            stage(
+                &target,
+                &format!("Initial OS Version (before update): {}", label),
+            );
+            version
+        }
+        Err(err) => {
+            stage(
+                &target,
+                &format!(
+                    "Initial OS Version (before update): unknown (fetch failed: {})",
+                    err
+                ),
+            );
+            None
+        }
+    };
 
     let os_update_cmd = std::env::var("DSC_SSH_OS_UPDATE_CMD").unwrap_or_else(|_| {
         "sudo -n DEBIAN_FRONTEND=noninteractive apt update && sudo -n DEBIAN_FRONTEND=noninteractive apt upgrade -y"
@@ -92,8 +139,15 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
 
     let mut server_rebooted = false;
 
-    if let Err(err) = run_ssh_command(&target, &os_update_cmd) {
+    stage(&target, "Running OS update");
+    if let Err(err) = run_ssh_command_with_tail(
+        &target,
+        &os_update_cmd,
+        "OS update in progress",
+        3,
+    ) {
         if let Some(rollback_cmd) = os_update_rollback_cmd() {
+            stage(&target, "Running OS update rollback");
             if let Err(rollback_err) = run_ssh_command(&target, &rollback_cmd) {
                 eprintln!(
                     "Warning: OS update rollback failed for {}: {}",
@@ -104,10 +158,12 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
         return Err(anyhow!("OS update failed for {}: {}", target, err));
     }
     let os_updated = true;
+    stage(&target, "Rebooting server");
     if run_ssh_command(&target, &reboot_cmd).is_ok() {
         server_rebooted = true;
         if std::env::var("DSC_SSH_OS_UPDATE_CMD").unwrap_or_default() != "echo OS packages updated"
         {
+            stage(&target, "Waiting for server to come back online");
             std::thread::sleep(std::time::Duration::from_secs(30));
             let mut attempts = 0;
             let max_attempts = 12;
@@ -117,6 +173,12 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
                     Ok(false) | Err(_) => {
                         attempts += 1;
                         if attempts < max_attempts {
+                            println!(
+                                "[{}] Still waiting for SSH (attempt {}/{})",
+                                target,
+                                attempts + 1,
+                                max_attempts
+                            );
                             std::thread::sleep(std::time::Duration::from_secs(30));
                         }
                     }
@@ -128,11 +190,38 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
         }
     }
 
-    run_ssh_command(&target, &discourse_update_cmd)?;
-    let after_version = client.fetch_version().unwrap_or(None);
+    stage(&target, "Running Discourse update");
+    run_ssh_command_with_tail(
+        &target,
+        &discourse_update_cmd,
+        "Discourse update in progress",
+        3,
+    )?;
+    stage(&target, "Fetching Discourse version (after update)");
+    let after_version = match client.fetch_version() {
+        Ok(version) => {
+            let label = version.as_deref().unwrap_or("unknown");
+            stage(
+                &target,
+                &format!("Final Discourse Version (after update): {}", label),
+            );
+            version
+        }
+        Err(err) => {
+            stage(
+                &target,
+                &format!(
+                    "Final Discourse Version (after update): unknown (fetch failed: {})",
+                    err
+                ),
+            );
+            None
+        }
+    };
+    stage(&target, "Running cleanup");
     let cleanup = run_ssh_command(&target, &cleanup_cmd)?;
     let reclaimed_space = parse_reclaimed_space(&cleanup);
-    let after_os_version = get_os_version(&target)?;
+    let after_os_version = None;
 
     Ok(UpdateMetadata {
         before_version,
@@ -150,7 +239,7 @@ pub(crate) fn run_ssh_command(target: &str, command: &str) -> Result<String> {
     let output = cmd
         .arg(command)
         .output()
-        .with_context(|| format!("running ssh to {}", target))?;
+        .with_context(|| format!("running ssh to {}: {}", target, command))?;
     if !output.status.success() {
         return Err(anyhow!(
             "ssh command failed for {}: {}",
@@ -159,6 +248,145 @@ pub(crate) fn run_ssh_command(target: &str, command: &str) -> Result<String> {
         ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn run_ssh_command_with_spinner(target: &str, command: &str, message: &str) -> Result<String> {
+    let pb = ProgressBar::new_spinner();
+    let style =
+        ProgressStyle::with_template("{spinner} {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner());
+    pb.set_style(style);
+    pb.set_message(format!("[{}] {}", target, message));
+    pb.enable_steady_tick(Duration::from_millis(120));
+
+    let (tx, rx) = mpsc::channel();
+    let target = target.to_string();
+    let command = command.to_string();
+    thread::spawn(move || {
+        let result = run_ssh_command(&target, &command);
+        let _ = tx.send(result);
+    });
+
+    let result = rx
+        .recv()
+        .map_err(|_| anyhow!("OS update command thread ended unexpectedly"))?;
+    pb.finish_and_clear();
+    result
+}
+
+struct LineEvent {
+    is_stderr: bool,
+    line: String,
+}
+
+fn run_ssh_command_with_tail(
+    target: &str,
+    command: &str,
+    message: &str,
+    tail_lines: usize,
+) -> Result<String> {
+    let pb = ProgressBar::new_spinner();
+    let style =
+        ProgressStyle::with_template("{spinner} {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner());
+    pb.set_style(style);
+    pb.enable_steady_tick(Duration::from_millis(120));
+
+    let mut cmd = build_ssh_command(target, &[])?;
+    let mut child = cmd
+        .arg(command)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("running ssh to {}: {}", target, command))?;
+
+    let stdout = child.stdout.take().context("missing stdout")?;
+    let stderr = child.stderr.take().context("missing stderr")?;
+
+    let (tx, rx) = mpsc::channel::<LineEvent>();
+    let tx_out = tx.clone();
+    thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            match line {
+                Ok(line) => {
+                    let _ = tx_out.send(LineEvent {
+                        is_stderr: false,
+                        line,
+                    });
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let tx_err = tx.clone();
+    thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            match line {
+                Ok(line) => {
+                    let _ = tx_err.send(LineEvent {
+                        is_stderr: true,
+                        line,
+                    });
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    drop(tx);
+
+    let mut stdout_buf = String::new();
+    let mut stderr_buf = String::new();
+    let mut tail: VecDeque<String> = VecDeque::new();
+    let base = format!("[{}] {}", target, message);
+    pb.set_message(base.clone());
+
+    loop {
+        match rx.recv_timeout(Duration::from_millis(200)) {
+            Ok(event) => {
+                if event.is_stderr {
+                    stderr_buf.push_str(&event.line);
+                    stderr_buf.push('\n');
+                } else {
+                    stdout_buf.push_str(&event.line);
+                    stdout_buf.push('\n');
+                }
+
+                if tail_lines > 0 {
+                    if tail.len() == tail_lines {
+                        tail.pop_front();
+                    }
+                    tail.push_back(event.line);
+
+                    let mut msg = base.clone();
+                    for line in &tail {
+                        msg.push('\n');
+                        msg.push_str("  ");
+                        msg.push_str(line);
+                    }
+                    pb.set_message(msg);
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
+    let status = child.wait().context("waiting for ssh command")?;
+    pb.finish_and_clear();
+
+    if !status.success() {
+        return Err(anyhow!(
+            "ssh command failed for {}: {}",
+            target,
+            stderr_buf
+        ));
+    }
+
+    Ok(stdout_buf)
 }
 
 fn build_ssh_command(target: &str, extra_options: &[&str]) -> Result<std::process::Command> {
@@ -211,8 +439,12 @@ fn ssh_probe(target: &str) -> Result<bool> {
     let output = cmd
         .arg("echo 'server is up'")
         .output()
-        .with_context(|| format!("running ssh to {}", target))?;
+        .with_context(|| format!("running ssh probe to {}", target))?;
     Ok(output.status.success())
+}
+
+fn stage(target: &str, message: &str) {
+    println!("[{}] {}", target, message);
 }
 
 fn get_os_version(target: &str) -> Result<Option<String>> {
@@ -320,14 +552,23 @@ fn handle_changelog_post(
 ) -> Result<()> {
     let payload = build_changelog_payload(metadata);
     println!("\nChangelog message for {}:\n{}\n", discourse.name, payload);
-    if !confirm_changelog_post()? {
-        println!("Changelog post skipped.");
+    let topic_id = discourse.changelog_topic_id;
+    if topic_id.is_none() {
+        println!(
+            "Changelog post skipped: missing changelog_topic_id for {}",
+            discourse.name
+        );
         return Ok(());
     }
 
     if let Err(err) = ensure_api_credentials(discourse) {
-        println!("Changelog post failed: {}", err);
-        return Err(err);
+        println!("Changelog post skipped: {}", err);
+        return Ok(());
+    }
+
+    if !confirm_changelog_post()? {
+        println!("Changelog post skipped.");
+        return Ok(());
     }
 
     match post_changelog_update(discourse, &payload) {

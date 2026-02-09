@@ -2,6 +2,27 @@
 
 autoload -U is-at-least
 
+_dsc_discourse_names() {
+    local config_path
+    local i
+    for i in {1..$#words}; do
+        if [[ ${words[$i]} == -c || ${words[$i]} == --config ]]; then
+            config_path=${words[$((i+1))]}
+        elif [[ ${words[$i]} == --config=* ]]; then
+            config_path=${words[$i]#--config=}
+        fi
+    done
+
+    local cmd=(dsc list --format plaintext)
+    if [[ -n ${config_path:-} ]]; then
+        cmd+=(-c "$config_path")
+    fi
+
+    local -a names
+    names=(${(f)"$(command ${cmd[@]} 2>/dev/null | sed 's/ - .*//')"})
+    _describe -t discourses 'discourses' names
+}
+
 _dsc() {
     typeset -A opt_args
     typeset -a _arguments_options
@@ -62,7 +83,7 @@ _arguments "${_arguments_options[@]}" : \
 '--post-changelog[]' \
 '-h[Print help]' \
 '--help[Print help]' \
-':name:_default' \
+':name:_dsc_discourse_names' \
 && ret=0
 ;;
 (emoji)
