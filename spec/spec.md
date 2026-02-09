@@ -70,10 +70,13 @@ Optionally makes a post in the Changelog topic about the update.
 Version and cleanup data should be collected during the update and used to fill the checklist:
 
 ```md
-- [x] Ubuntu OS updated
-- [x] Server rebooted
-- [x] Updated Discourse to version [x.y.z] (where x.y.z is the new version number)
-- [x] `./launcher cleanup` Total reclaimed space: [reclaimed space] (where [reclaimed space] is the amount of disk space reclaimed)
+- [x] OS updated {{ubuntu_os_version}}
+- {% if rebooted %} {{[x] Server rebooted}} {% endif %}
+- [x] Updated Discourse:
+  - Initial version: {{ before_version }} [{{ before_commit_hash | truncate 7 }} ](https://github.com/discourse/discourse/commit/{{ before_commit_hash }})
+  - Updated version: {{ after_version }} {% if after_version_error %} (fetch failed: {{ after_version_error }}){% endif %} [{{ after_commit_hash | truncate 7 }} ](https://github.com/discourse/discourse/commit/{{ after_commit_hash }})
+- [x] `./launcher cleanup` Total reclaimed space: {{ reclaimed_space }}
+- [x] Root disk usage (df -h /): {{ root_disk_usage }}
 ```
 
 Flags:
@@ -90,6 +93,7 @@ Environment variables (optional overrides for SSH commands):
 - `DSC_SSH_OS_VERSION_CMD` (default: `lsb_release -d | cut -f2`, fallback to `/etc/os-release`)
 - `DSC_SSH_UPDATE_CMD` (default: `cd /var/discourse && sudo -n ./launcher rebuild app`)
 - `DSC_SSH_CLEANUP_CMD` (default: `cd /var/discourse && sudo -n ./launcher cleanup`)
+- `DSC_DISCOURSE_BOOT_WAIT_SECS` (default: `15`; seconds to wait after rebuild before fetching `about.json`)
 - `DSC_SSH_PLUGIN_INSTALL_CMD` (template command for `dsc plugin install`; supports `{url}` and `{name}`)
 - `DSC_SSH_PLUGIN_REMOVE_CMD` (template command for `dsc plugin remove`; supports `{name}` and `{url}`)
 - `DSC_SSH_THEME_INSTALL_CMD` (template command for `dsc theme install`; supports `{url}` and `{name}`)
