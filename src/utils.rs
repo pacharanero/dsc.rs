@@ -9,23 +9,15 @@ pub fn normalize_baseurl(baseurl: &str) -> String {
 
 /// Create a URL-safe slug from arbitrary input.
 pub fn slugify(input: &str) -> String {
-    let mut out = String::new();
-    let mut last_dash = false;
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
-            last_dash = false;
-        } else if !last_dash {
-            out.push('-');
-            last_dash = true;
-        }
-    }
-    while out.starts_with('-') {
-        out.remove(0);
-    }
-    while out.ends_with('-') {
-        out.pop();
-    }
+    let out = input
+        .to_ascii_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+        .trim_end_matches('-')
+        .to_string();
+
     if out.is_empty() {
         "untitled".to_string()
     } else {
@@ -35,8 +27,7 @@ pub fn slugify(input: &str) -> String {
 
 /// Ensure a directory exists.
 pub fn ensure_dir(path: &Path) -> Result<()> {
-    fs::create_dir_all(path).with_context(|| format!("creating {}", path.display()))?;
-    Ok(())
+    fs::create_dir_all(path).context(format!("creating {}", path.display()))
 }
 
 /// Resolve a topic path from a user-provided path and a topic title.
@@ -56,8 +47,7 @@ pub fn resolve_topic_path(
 
 /// Read a Markdown file.
 pub fn read_markdown(path: &Path) -> Result<String> {
-    let raw = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    Ok(raw)
+    fs::read_to_string(path).context(format!("reading {}", path.display()))
 }
 
 /// Write a Markdown file, creating parent directories if needed.
@@ -65,6 +55,5 @@ pub fn write_markdown(path: &Path, content: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         ensure_dir(parent)?;
     }
-    fs::write(path, content).with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
+    fs::write(path, content).context(format!("writing {}", path.display()))
 }
