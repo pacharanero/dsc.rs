@@ -1,6 +1,6 @@
 use crate::commands::common::ensure_api_credentials;
 use crate::config::{find_discourse, Config, DiscourseConfig};
-use crate::discourse::DiscourseClient;
+use crate::api::{DiscourseClient, VersionInfo};
 use anyhow::{anyhow, Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::VecDeque;
@@ -14,8 +14,9 @@ use std::time::Duration;
 pub fn update_one(config: &Config, name: &str, post_changelog: bool) -> Result<()> {
     let discourse = find_discourse(config, name).ok_or_else(|| anyhow!("unknown discourse"))?;
     let metadata = run_update(discourse)?;
+    let payload = print_update_summary(discourse, &metadata);
     if post_changelog {
-        handle_changelog_post(discourse, Some(&metadata))?;
+        handle_changelog_post(discourse, &payload)?;
     }
     Ok(())
 }
@@ -34,8 +35,9 @@ pub fn update_all(
     if !concurrent {
         for discourse in &config.discourse {
             let metadata = run_update(discourse)?;
+            let payload = print_update_summary(discourse, &metadata);
             if post_changelog {
-                handle_changelog_post(discourse, Some(&metadata))?;
+                handle_changelog_post(discourse, &payload)?;
             }
         }
         return Ok(());
@@ -52,8 +54,9 @@ pub fn update_all(
         let do_post = post_changelog;
         handles.push(thread::spawn(move || {
             let metadata = run_update(&discourse)?;
+            let payload = print_update_summary(&discourse, &metadata);
             if do_post {
-                handle_changelog_post(&discourse, Some(&metadata))?;
+                handle_changelog_post(&discourse, &payload)?;
             }
             Ok::<_, anyhow::Error>(())
         }));
@@ -68,10 +71,13 @@ pub fn update_all(
 
 struct UpdateMetadata {
     before_version: Option<String>,
+    before_commit: Option<String>,
     after_version: Option<String>,
+    after_commit: Option<String>,
     reclaimed_space: Option<String>,
     before_os_version: Option<String>,
-    after_os_version: Option<String>,
+    after_version_error: Option<String>,
+    root_disk_usage: Option<String>,
     os_updated: bool,
     server_rebooted: bool,
 }
@@ -84,14 +90,14 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
         .unwrap_or_else(|| discourse.name.clone());
     println!("\n==> Updating {} ({})", discourse.name, target);
     stage(&target, "Fetching Discourse version (before update)");
-    let before_version = match client.fetch_version() {
-        Ok(version) => {
-            let label = version.as_deref().unwrap_or("unknown");
+    let before_info = match client.fetch_version_info() {
+        Ok(info) => {
+            let label = info.version.as_deref().unwrap_or("unknown");
             stage(
                 &target,
                 &format!("Initial Discourse Version (before update): {}", label),
             );
-            version
+            info
         }
         Err(err) => {
             stage(
@@ -101,16 +107,19 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
                     err
                 ),
             );
-            None
+            VersionInfo {
+                version: None,
+                commit: None,
+            }
         }
     };
-    stage(&target, "Fetching OS version (before update)");
+    stage(&target, "Fetching OS details");
     let before_os_version = match get_os_version(&target) {
         Ok(version) => {
             let label = version.as_deref().unwrap_or("unknown");
             stage(
                 &target,
-                &format!("Initial OS Version (before update): {}", label),
+                &format!("OS: {}", label),
             );
             version
         }
@@ -197,38 +206,65 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
         "Discourse update in progress",
         3,
     )?;
+    stage(&target, "Waiting for Discourse to serve pages");
+    let wait_secs = std::env::var("DSC_DISCOURSE_BOOT_WAIT_SECS")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|secs| *secs > 0)
+        .unwrap_or(15);
+    std::thread::sleep(std::time::Duration::from_secs(wait_secs));
     stage(&target, "Fetching Discourse version (after update)");
-    let after_version = match client.fetch_version() {
-        Ok(version) => {
-            let label = version.as_deref().unwrap_or("unknown");
+    let mut after_version_error = None;
+    let after_info = match fetch_version_info_with_retry(&client, 3) {
+        Ok(info) => {
+            let label = info.version.as_deref().unwrap_or("unknown");
             stage(
                 &target,
                 &format!("Final Discourse Version (after update): {}", label),
             );
-            version
+            info
         }
         Err(err) => {
+            let message = format!("{}", err);
+            after_version_error = Some(message.clone());
             stage(
                 &target,
                 &format!(
                     "Final Discourse Version (after update): unknown (fetch failed: {})",
-                    err
+                    message
                 ),
+            );
+            VersionInfo {
+                version: None,
+                commit: None,
+            }
+        }
+    };
+    stage(&target, "Running cleanup");
+    let cleanup = run_ssh_command_combined(&target, &cleanup_cmd)?;
+    let reclaimed_space = parse_reclaimed_space(&cleanup);
+    // No OS version check after update; routine updates don't upgrade OS versions.
+    stage(&target, "Fetching root disk usage");
+    let root_disk_usage = match get_root_disk_usage(&target) {
+        Ok(output) => Some(output),
+        Err(err) => {
+            stage(
+                &target,
+                &format!("Root disk usage: unknown (fetch failed: {})", err),
             );
             None
         }
     };
-    stage(&target, "Running cleanup");
-    let cleanup = run_ssh_command(&target, &cleanup_cmd)?;
-    let reclaimed_space = parse_reclaimed_space(&cleanup);
-    let after_os_version = None;
 
     Ok(UpdateMetadata {
-        before_version,
-        after_version,
+        before_version: before_info.version,
+        before_commit: before_info.commit,
+        after_version: after_info.version,
+        after_commit: after_info.commit,
         reclaimed_space,
         before_os_version,
-        after_os_version,
+        after_version_error,
+        root_disk_usage,
         os_updated,
         server_rebooted,
     })
@@ -250,28 +286,23 @@ pub(crate) fn run_ssh_command(target: &str, command: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-fn run_ssh_command_with_spinner(target: &str, command: &str, message: &str) -> Result<String> {
-    let pb = ProgressBar::new_spinner();
-    let style =
-        ProgressStyle::with_template("{spinner} {msg}")
-            .unwrap_or_else(|_| ProgressStyle::default_spinner());
-    pb.set_style(style);
-    pb.set_message(format!("[{}] {}", target, message));
-    pb.enable_steady_tick(Duration::from_millis(120));
-
-    let (tx, rx) = mpsc::channel();
-    let target = target.to_string();
-    let command = command.to_string();
-    thread::spawn(move || {
-        let result = run_ssh_command(&target, &command);
-        let _ = tx.send(result);
-    });
-
-    let result = rx
-        .recv()
-        .map_err(|_| anyhow!("OS update command thread ended unexpectedly"))?;
-    pb.finish_and_clear();
-    result
+fn run_ssh_command_combined(target: &str, command: &str) -> Result<String> {
+    let mut cmd = build_ssh_command(target, &[])?;
+    let output = cmd
+        .arg(command)
+        .output()
+        .with_context(|| format!("running ssh to {}: {}", target, command))?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "ssh command failed for {}: {}",
+            target,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let mut combined = String::new();
+    combined.push_str(&String::from_utf8_lossy(&output.stdout));
+    combined.push_str(&String::from_utf8_lossy(&output.stderr));
+    Ok(combined)
 }
 
 struct LineEvent {
@@ -447,6 +478,12 @@ fn stage(target: &str, message: &str) {
     println!("[{}] {}", target, message);
 }
 
+fn print_update_summary(discourse: &DiscourseConfig, metadata: &UpdateMetadata) -> String {
+    let payload = build_changelog_payload(metadata);
+    println!("\nUpdate summary for {}:\n{}\n", discourse.name, payload);
+    payload
+}
+
 fn get_os_version(target: &str) -> Result<Option<String>> {
     let version_cmd = std::env::var("DSC_SSH_OS_VERSION_CMD")
         .unwrap_or_else(|_| "lsb_release -d | cut -f2".to_string());
@@ -469,6 +506,12 @@ fn parse_reclaimed_space(output: &str) -> Option<String> {
         .map(|value| value.trim().to_string())
 }
 
+fn get_root_disk_usage(target: &str) -> Result<String> {
+    let cmd = "df -h / | awk 'NR==2 {print $2 \" total, \" $3 \" used, \" $4 \" available, \" $5 \" used\"}'";
+    let output = run_ssh_command(target, cmd)?;
+    Ok(output.trim().to_string())
+}
+
 fn os_update_rollback_cmd() -> Option<String> {
     let raw = std::env::var("DSC_SSH_OS_UPDATE_ROLLBACK_CMD").unwrap_or_default();
     let trimmed = raw.trim();
@@ -479,47 +522,94 @@ fn os_update_rollback_cmd() -> Option<String> {
     }
 }
 
-fn build_changelog_payload(metadata: Option<&UpdateMetadata>) -> String {
-    let version = metadata
-        .and_then(|meta| meta.after_version.clone().or(meta.before_version.clone()))
-        .unwrap_or_else(|| "unknown".to_string());
-    let reclaimed = metadata
-        .and_then(|meta| meta.reclaimed_space.clone())
-        .unwrap_or_else(|| "unknown".to_string());
-    let mut body = Vec::new();
-    if let Some(meta) = metadata {
-        if meta.os_updated {
-            body.push("- [x] Ubuntu OS updated".to_string());
-            if let Some(before_os) = &meta.before_os_version {
-                if let Some(after_os) = &meta.after_os_version {
-                    body.push(format!("  OS version: {} → {}", before_os, after_os));
-                }
-            }
-        } else {
-            body.push("- [ ] Ubuntu OS updated".to_string());
-            body.push("  (OS update was skipped or failed)".to_string());
-        }
+fn build_changelog_payload(metadata: &UpdateMetadata) -> String {
+    let before_version = metadata.before_version.as_deref().unwrap_or("unknown");
+    let after_version = metadata.after_version.as_deref().unwrap_or("unknown");
+    let reclaimed = metadata.reclaimed_space.as_deref().unwrap_or("unknown");
+    let os_version = metadata
+        .before_os_version
+        .as_deref()
+        .unwrap_or("unknown");
+    let root_disk = metadata
+        .root_disk_usage
+        .as_deref()
+        .unwrap_or("unknown");
+    let before_commit = format_commit_link(metadata.before_commit.as_deref());
+    let after_commit = format_commit_link(metadata.after_commit.as_deref());
 
-        if meta.server_rebooted {
-            body.push("- [x] Server rebooted".to_string());
-        } else {
-            body.push("- [ ] Server rebooted".to_string());
-            body.push("  (Server reboot was skipped or failed)".to_string());
-        }
+    let mut body = Vec::new();
+    if metadata.os_updated {
+        body.push(format!("- [x] OS updated {}", os_version));
     } else {
-        body.push("- [x] Ubuntu OS updated".to_string());
+        body.push(format!("- [ ] OS updated {}", os_version));
+    }
+
+    if metadata.server_rebooted {
         body.push("- [x] Server rebooted".to_string());
     }
-    body.push(format!("- [x] Updated Discourse to version {}", version));
+
+    body.push("- [x] Updated Discourse:".to_string());
+    body.push(format!(
+        "  - Initial version: {} {}",
+        before_version, before_commit
+    ));
+    let after_error = metadata
+        .after_version_error
+        .as_deref()
+        .map(|err| format!(" (fetch failed: {})", err))
+        .unwrap_or_default();
+    body.push(format!(
+        "  - Updated version: {}{} {}",
+        after_version, after_error, after_commit
+    ));
     body.push(format!(
         "- [x] `./launcher cleanup` Total reclaimed space: {}",
         reclaimed
+    ));
+    body.push(format!(
+        "- [x] Root disk usage (df -h /): {}",
+        root_disk
     ));
     let test_marker = std::env::var("DSC_TEST_MARKER").ok();
     if let Some(marker) = &test_marker {
         body.push(format!("- Run-ID: {}", marker));
     }
     body.join("\n")
+}
+
+fn fetch_version_info_with_retry(
+    client: &DiscourseClient,
+    attempts: usize,
+) -> Result<VersionInfo> {
+    let mut last_err = None;
+    let total = attempts.max(1);
+    for attempt in 0..total {
+        match client.fetch_version_info() {
+            Ok(info) => return Ok(info),
+            Err(err) => {
+                last_err = Some(err);
+                if attempt + 1 < total {
+                    std::thread::sleep(std::time::Duration::from_secs(2 * (attempt + 1) as u64));
+                }
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow!("fetch version failed")))
+}
+
+fn format_commit_link(commit: Option<&str>) -> String {
+    let Some(commit) = commit else {
+        return "unknown".to_string();
+    };
+    let trimmed = commit.trim();
+    if trimmed.is_empty() {
+        return "unknown".to_string();
+    }
+    let short = trimmed.chars().take(7).collect::<String>();
+    format!(
+        "[{}](https://github.com/discourse/discourse/commit/{})",
+        short, trimmed
+    )
 }
 
 fn post_changelog_update(discourse: &DiscourseConfig, payload: &str) -> Result<u64> {
@@ -546,12 +636,7 @@ fn confirm_changelog_post() -> Result<bool> {
     Ok(matches!(input.trim(), "y" | "Y" | "yes" | "YES"))
 }
 
-fn handle_changelog_post(
-    discourse: &DiscourseConfig,
-    metadata: Option<&UpdateMetadata>,
-) -> Result<()> {
-    let payload = build_changelog_payload(metadata);
-    println!("\nChangelog message for {}:\n{}\n", discourse.name, payload);
+fn handle_changelog_post(discourse: &DiscourseConfig, payload: &str) -> Result<()> {
     let topic_id = discourse.changelog_topic_id;
     if topic_id.is_none() {
         println!(
@@ -571,7 +656,7 @@ fn handle_changelog_post(
         return Ok(());
     }
 
-    match post_changelog_update(discourse, &payload) {
+    match post_changelog_update(discourse, payload) {
         Ok(post_id) => {
             println!("Changelog post created with ID: {}", post_id);
             Ok(())

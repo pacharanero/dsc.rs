@@ -1,5 +1,5 @@
 use crate::config::{find_discourse, Config, DiscourseConfig};
-use crate::discourse::DiscourseClient;
+use crate::api::DiscourseClient;
 use anyhow::{anyhow, Result};
 
 pub fn select_discourse<'a>(

@@ -10,5 +10,5 @@ mod settings;
 mod themes;
 mod topics;
 
-pub use client::DiscourseClient;
+pub use client::{DiscourseClient, VersionInfo};
 pub use models::*;

@@ -1,7 +1,7 @@
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::commands::update::run_ssh_command;
 use crate::config::{Config, DiscourseConfig};
-use crate::discourse::DiscourseClient;
+use crate::api::DiscourseClient;
 use anyhow::{anyhow, Result};
 
 pub fn theme_list(config: &Config, discourse_name: &str) -> Result<()> {

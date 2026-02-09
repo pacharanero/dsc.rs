@@ -53,6 +53,7 @@ pub fn load_config(path: &Path) -> Result<Config> {
     }
     let raw = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let config: Config = toml::from_str(&raw).with_context(|| "parsing config")?;
+    warn_on_discourse_names(&config);
     Ok(config)
 }
 
@@ -109,4 +110,15 @@ pub fn find_discourse_mut<'a>(
     name: &str,
 ) -> Option<&'a mut DiscourseConfig> {
     config.discourse.iter_mut().find(|d| d.name == name)
+}
+
+fn warn_on_discourse_names(config: &Config) {
+    for discourse in &config.discourse {
+        if discourse.name.chars().any(|ch| ch.is_whitespace()) {
+            eprintln!(
+                "Warning: discourse name '{}' contains whitespace. Prefer a short, slugified name without spaces; use 'fullname' for display.",
+                discourse.name
+            );
+        }
+    }
 }

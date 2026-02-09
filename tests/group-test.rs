@@ -1,6 +1,6 @@
 mod common;
 use common::*;
-use dsc::discourse::{DiscourseClient, GroupDetail};
+use dsc::api::{DiscourseClient, GroupDetail};
 use dsc::utils::slugify;
 use std::collections::BTreeMap;
 use tempfile::TempDir;

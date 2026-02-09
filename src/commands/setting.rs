@@ -1,6 +1,6 @@
 use crate::commands::common::{ensure_api_credentials, parse_tags};
 use crate::config::{Config, DiscourseConfig};
-use crate::discourse::DiscourseClient;
+use crate::api::DiscourseClient;
 use anyhow::{anyhow, Result};
 
 pub fn set_site_setting(

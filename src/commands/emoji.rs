@@ -1,6 +1,6 @@
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
-use crate::discourse::DiscourseClient;
+use crate::api::DiscourseClient;
 use crate::utils::slugify;
 use anyhow::{anyhow, Context, Result};
 use base64::Engine;
@@ -80,7 +80,7 @@ pub fn list_emojis(config: &Config, discourse_name: &str, inline: bool) -> Resul
     Ok(())
 }
 
-fn print_emojis_table(emojis: &[crate::discourse::CustomEmoji]) {
+fn print_emojis_table(emojis: &[crate::api::CustomEmoji]) {
     println!("name\turl");
     for emoji in emojis {
         println!("{}\t{}", emoji.name, emoji.url);
@@ -123,7 +123,7 @@ fn detect_inline_protocol() -> Option<InlineProtocol> {
 }
 
 fn print_inline_emojis(
-    emojis: &[crate::discourse::CustomEmoji],
+    emojis: &[crate::api::CustomEmoji],
     protocol: InlineProtocol,
 ) -> Result<()> {
     let client = reqwest::blocking::Client::new();

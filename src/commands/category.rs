@@ -1,6 +1,6 @@
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
-use crate::discourse::{CategoryInfo, DiscourseClient, TopicSummary};
+use crate::api::{CategoryInfo, DiscourseClient, TopicSummary};
 use crate::utils::{ensure_dir, read_markdown, slugify, write_markdown};
 use anyhow::{anyhow, Context, Result};
 use std::fs;

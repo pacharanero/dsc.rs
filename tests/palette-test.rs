@@ -1,7 +1,7 @@
 use common::*;
 mod common;
 use common::*;
-use dsc::discourse::DiscourseClient;
+use dsc::api::DiscourseClient;
 use std::fs;
 use tempfile::TempDir;
 

@@ -1,7 +1,7 @@
 use crate::cli::StructuredFormat;
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
-use crate::discourse::DiscourseClient;
+use crate::api::DiscourseClient;
 use crate::utils::slugify;
 use anyhow::{anyhow, Result};
 

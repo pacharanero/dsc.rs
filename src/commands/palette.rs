@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
-use crate::discourse::DiscourseClient;
+use crate::api::DiscourseClient;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct PaletteFile {
