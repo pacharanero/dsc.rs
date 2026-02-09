@@ -51,6 +51,7 @@ ssh_host = "forum.example.com"
 Notes:
 
 - `baseurl` should not end with a trailing slash.
+- `name` should be short and slugified (avoid spaces). Use `fullname` for the display name.
 - `fullname` is the Discourse site title (auto-populated when adding/importing if it can be fetched).
 - `ssh_host` enables `update` over SSH (`./launcher rebuild app`). Configure keys in your SSH config.
 - `changelog_topic_id` is required if you want `--post-changelog` to prompt and post a checklist update.
@@ -68,6 +69,23 @@ General form: `dsc [--config dsc.toml] <command>`.
 - Import installs from file: `dsc import path/to/urls.txt` or `dsc import path/to/forums.csv`
 - Update one install: `dsc update <name> [--post-changelog]`
 - Update all installs: `dsc update all [--post-changelog]`
+
+Environment variables for `dsc update`:
+
+- `DSC_SSH_OS_UPDATE_CMD` (default: `sudo -n DEBIAN_FRONTEND=noninteractive apt update && sudo -n DEBIAN_FRONTEND=noninteractive apt upgrade -y`)
+- `DSC_SSH_OS_UPDATE_ROLLBACK_CMD` (optional command to run if OS update fails)
+- `DSC_SSH_REBOOT_CMD` (default: `sudo -n reboot`)
+- `DSC_SSH_OS_VERSION_CMD` (default: `lsb_release -d | cut -f2`, fallback to `/etc/os-release`)
+- `DSC_SSH_UPDATE_CMD` (default: `cd /var/discourse && sudo -n ./launcher rebuild app`)
+- `DSC_SSH_CLEANUP_CMD` (default: `cd /var/discourse && sudo -n ./launcher cleanup`)
+- `DSC_SSH_STRICT_HOST_KEY_CHECKING` (default: `accept-new`; set empty to omit)
+- `DSC_SSH_OPTIONS` (extra ssh options, space-delimited)
+- `DSC_DISCOURSE_BOOT_WAIT_SECS` (default: `15`; seconds to wait after rebuild before fetching `about.json`)
+
+Update summary notes:
+
+- Version/commit info is extracted from the homepage `<meta name="generator" ...>` tag; the commit hash is printed as a GitHub link when available.
+- If the version fetch fails, the summary includes the reason in-line.
   - `--post-changelog` prints the checklist and prompts before posting.
 - Add emoji: `dsc emoji add <discourse> <emoji-path> [emoji-name]`
 - List custom emoji: `dsc emoji list <discourse> [--inline]`
