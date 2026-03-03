@@ -60,7 +60,7 @@ Notes:
 - `name` should be short and slugified (avoid spaces). Use `fullname` for the display name.
 - `fullname` is the Discourse site title (auto-populated when adding/importing if it can be fetched).
 - `ssh_host` enables `update` over SSH (`./launcher rebuild app`). Configure keys in your SSH config.
-- `changelog_topic_id` is required if you want `--post-changelog` to prompt and post a checklist update.
+- `changelog_topic_id` is required if you want `dsc update` to prompt and post a checklist update (default behavior).
 - `tags` (optional) can label installs; they are emitted in list output formats.
 - Most forum read/write commands require `apikey` and `api_username`. If they are missing, `dsc` will fail with a clear message.
 - `dsc add` without `--interactive` appends a full `[[discourse]]` template containing every supported config key, using placeholders like `""`, `[]`, and `0`.
@@ -76,8 +76,8 @@ For the complete command/flag surface, use `dsc --help` and `dsc <command> --hel
 - Tidy/sort config entries: `dsc list tidy`
 - Add installs: `dsc add forum-a,forum-b [--interactive]`
 - Import installs from file: `dsc import path/to/urls.txt` or `dsc import path/to/forums.csv`
-- Update one install: `dsc update <name> [--post-changelog] [--yes]`
-- Update all installs: `dsc update all [--parallel] [--max <n>] [--post-changelog] [--yes]`
+- Update one install: `dsc update <name> [--no-changelog] [--yes]`
+- Update all installs: `dsc update all [--parallel] [--max <n>] [--no-changelog] [--yes]`
 
 Environment variables for `dsc update`:
 
@@ -90,13 +90,14 @@ Environment variables for `dsc update`:
 - `DSC_SSH_STRICT_HOST_KEY_CHECKING` (default: `accept-new`; set empty to omit)
 - `DSC_SSH_OPTIONS` (extra ssh options, space-delimited)
 - `DSC_DISCOURSE_BOOT_WAIT_SECS` (default: `15`; seconds to wait after rebuild before fetching `about.json`)
+- `DSC_COLOR` (`auto`|`always`|`never`, default: `auto`) controls ANSI color output for friendly discourse labels in update logs (`NO_COLOR` also disables color)
 
 Update summary notes:
 
 - Version/commit info is extracted from the homepage `<meta name="generator" ...>` tag; the commit hash is printed as a GitHub link when available.
 - If the version fetch fails, the summary includes the reason in-line.
-  - `--post-changelog` prints the checklist and prompts before posting.
-  - `--yes` auto-confirms the changelog post prompt (requires `--post-changelog`).
+  - Changelog posting is on by default for `dsc update`; pass `--no-changelog` to skip posting.
+  - `--yes` auto-confirms the changelog post prompt (non-interactive mode).
 - Add emoji: `dsc emoji add <discourse> <emoji-path> [emoji-name]`
 - List custom emoji: `dsc emoji list <discourse> [--format text|json|yaml] [--inline]`
 - Topic pull: `dsc topic pull <discourse> <topic-id> [local-path]`
@@ -225,7 +226,7 @@ name = "myforum"
 baseurl = "https://forum.example.com"
 apikey = "<admin api key>"
 api_username = "system"
-changelog_topic_id = 123        # optional unless testing update --post-changelog
+changelog_topic_id = 123        # optional unless testing update changelog posting
 test_topic_id = 456             # topic used by e2e topic tests
 test_category_id = 789          # category used by e2e category tests
 test_color_scheme_id = 321      # palette used by e2e palette tests

@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 use std::path::PathBuf;
 
@@ -39,9 +39,9 @@ pub enum Commands {
         parallel: bool,
         #[arg(long, short = 'm')]
         max: Option<usize>,
-        #[arg(long, short = 'g')]
+        #[arg(long = "no-changelog", action = ArgAction::SetFalse, default_value_t = true)]
         post_changelog: bool,
-        #[arg(long, short = 'y', requires = "post_changelog")]
+        #[arg(long, short = 'y')]
         yes: bool,
     },
     Emoji {

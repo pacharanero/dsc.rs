@@ -1,11 +1,12 @@
 use crate::api::{DiscourseClient, VersionInfo};
 use crate::commands::common::ensure_api_credentials;
 use crate::config::{Config, DiscourseConfig, find_discourse};
+use crate::utils::color_discourse_label;
 use anyhow::{Context, Result, anyhow};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::VecDeque;
 use std::io::{self, Write};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, IsTerminal};
 use std::process::Stdio;
 use std::sync::mpsc;
 use std::thread;
@@ -91,20 +92,24 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
         .ssh_host
         .clone()
         .unwrap_or_else(|| discourse.name.clone());
-    println!("\n==> Updating {} ({})", discourse.name, target);
-    stage(&target, "Fetching Discourse version (before update)");
+    let discourse_label = colored_discourse_display(discourse);
+    println!("\n==> Updating {} ({})", discourse_label, target);
+    stage(
+        &discourse_label,
+        "Fetching Discourse version (before update)",
+    );
     let before_info = match client.fetch_version_info() {
         Ok(info) => {
             let label = info.version.as_deref().unwrap_or("unknown");
             stage(
-                &target,
+                &discourse_label,
                 &format!("Initial Discourse Version (before update): {}", label),
             );
             info
         }
         Err(err) => {
             stage(
-                &target,
+                &discourse_label,
                 &format!(
                     "Initial Discourse Version (before update): unknown (fetch failed: {})",
                     err
@@ -116,16 +121,16 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
             }
         }
     };
-    stage(&target, "Fetching OS details");
+    stage(&discourse_label, "Fetching OS details");
     let before_os_version = match get_os_version(&target) {
         Ok(version) => {
             let label = version.as_deref().unwrap_or("unknown");
-            stage(&target, &format!("OS: {}", label));
+            stage(&discourse_label, &format!("OS: {}", label));
             version
         }
         Err(err) => {
             stage(
-                &target,
+                &discourse_label,
                 &format!(
                     "Initial OS Version (before update): unknown (fetch failed: {})",
                     err
@@ -135,7 +140,7 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
         }
     };
 
-    stage(&target, "Checking root disk free space");
+    stage(&discourse_label, "Checking root disk free space");
     let min_free_gb = std::env::var("DSC_DISCOURSE_MIN_FREE_GB")
         .ok()
         .and_then(|raw| raw.trim().parse::<u64>().ok())
@@ -165,11 +170,11 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
 
     let mut server_rebooted = false;
 
-    stage(&target, "Running OS update");
+    stage(&discourse_label, "Running OS update");
     if let Err(err) = run_ssh_command_with_tail(&target, &os_update_cmd, "OS update in progress", 3)
     {
         if let Some(rollback_cmd) = os_update_rollback_cmd() {
-            stage(&target, "Running OS update rollback");
+            stage(&discourse_label, "Running OS update rollback");
             if let Err(rollback_err) = run_ssh_command(&target, &rollback_cmd) {
                 eprintln!(
                     "Warning: OS update rollback failed for {}: {}",
@@ -180,12 +185,12 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
         return Err(anyhow!("OS update failed for {}: {}", target, err));
     }
     let os_updated = true;
-    stage(&target, "Rebooting server");
+    stage(&discourse_label, "Rebooting server");
     if run_ssh_command(&target, &reboot_cmd).is_ok() {
         server_rebooted = true;
         if std::env::var("DSC_SSH_OS_UPDATE_CMD").unwrap_or_default() != "echo OS packages updated"
         {
-            stage(&target, "Waiting for server to come back online");
+            stage(&discourse_label, "Waiting for server to come back online");
             std::thread::sleep(std::time::Duration::from_secs(30));
             let mut attempts = 0;
             let max_attempts = 12;
@@ -197,7 +202,7 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
                         if attempts < max_attempts {
                             println!(
                                 "[{}] Still waiting for SSH (attempt {}/{})",
-                                target,
+                                discourse_label,
                                 attempts + 1,
                                 max_attempts
                             );
@@ -212,27 +217,30 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
         }
     }
 
-    stage(&target, "Running Discourse update");
+    stage(&discourse_label, "Running Discourse update");
     run_ssh_command_with_tail(
         &target,
         &discourse_update_cmd,
         "Discourse update in progress",
         3,
     )?;
-    stage(&target, "Waiting for Discourse to serve pages");
+    stage(&discourse_label, "Waiting for Discourse to serve pages");
     let wait_secs = std::env::var("DSC_DISCOURSE_BOOT_WAIT_SECS")
         .ok()
         .and_then(|raw| raw.trim().parse::<u64>().ok())
         .filter(|secs| *secs > 0)
         .unwrap_or(15);
     std::thread::sleep(std::time::Duration::from_secs(wait_secs));
-    stage(&target, "Fetching Discourse version (after update)");
+    stage(
+        &discourse_label,
+        "Fetching Discourse version (after update)",
+    );
     let mut after_version_error = None;
     let after_info = match fetch_version_info_with_retry(&client, 6) {
         Ok(info) => {
             let label = info.version.as_deref().unwrap_or("unknown");
             stage(
-                &target,
+                &discourse_label,
                 &format!("Final Discourse Version (after update): {}", label),
             );
             info
@@ -241,7 +249,7 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
             let message = format!("{}", err);
             after_version_error = Some(message.clone());
             stage(
-                &target,
+                &discourse_label,
                 &format!(
                     "Final Discourse Version (after update): unknown (fetch failed: {})",
                     message
@@ -253,16 +261,16 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
             }
         }
     };
-    stage(&target, "Running cleanup");
+    stage(&discourse_label, "Running cleanup");
     let cleanup = run_ssh_command_combined(&target, &cleanup_cmd)?;
     let reclaimed_space = parse_reclaimed_space(&cleanup);
     // No OS version check after update; routine updates don't upgrade OS versions.
-    stage(&target, "Fetching root disk usage");
+    stage(&discourse_label, "Fetching root disk usage");
     let root_disk_usage = match get_root_disk_usage(&target) {
         Ok(output) => Some(output),
         Err(err) => {
             stage(
-                &target,
+                &discourse_label,
                 &format!("Root disk usage: unknown (fetch failed: {})", err),
             );
             None
@@ -329,11 +337,18 @@ fn run_ssh_command_with_tail(
     message: &str,
     tail_lines: usize,
 ) -> Result<String> {
-    let pb = ProgressBar::new_spinner();
-    let style = ProgressStyle::with_template("{spinner} {msg}")
-        .unwrap_or_else(|_| ProgressStyle::default_spinner());
-    pb.set_style(style);
-    pb.enable_steady_tick(Duration::from_millis(120));
+    let use_progress = io::stderr().is_terminal();
+    let pb = if use_progress {
+        ProgressBar::new_spinner()
+    } else {
+        ProgressBar::hidden()
+    };
+    if use_progress {
+        let style = ProgressStyle::with_template("{spinner} {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner());
+        pb.set_style(style);
+        pb.enable_steady_tick(Duration::from_millis(120));
+    }
 
     let mut cmd = build_ssh_command(target, &[])?;
     let mut child = cmd
@@ -488,8 +503,28 @@ fn stage(target: &str, message: &str) {
 
 fn print_update_summary(discourse: &DiscourseConfig, metadata: &UpdateMetadata) -> String {
     let payload = build_changelog_payload(metadata);
-    println!("\nUpdate summary for {}:\n{}\n", discourse.name, payload);
+    let discourse_label = colored_discourse_display(discourse);
+    println!("\nUpdate summary for {}:", discourse_label);
+    for line in payload.lines() {
+        println!("{}", line);
+    }
+    println!();
     payload
+}
+
+fn discourse_display_name(discourse: &DiscourseConfig) -> String {
+    if let Some(fullname) = discourse.fullname.as_deref() {
+        let trimmed = fullname.trim();
+        if !trimmed.is_empty() {
+            return format!("{} [{}]", trimmed, discourse.name);
+        }
+    }
+    discourse.name.clone()
+}
+
+fn colored_discourse_display(discourse: &DiscourseConfig) -> String {
+    let label = discourse_display_name(discourse);
+    color_discourse_label(&label, &discourse.name)
 }
 
 fn get_os_version(target: &str) -> Result<Option<String>> {
@@ -597,10 +632,14 @@ fn build_changelog_payload(metadata: &UpdateMetadata) -> String {
             after_version, after_error
         ));
     }
-    body.push(format!(
-        "- [x] `./launcher cleanup` Total reclaimed space: {}",
-        reclaimed
-    ));
+    if reclaimed == "unknown" {
+        body.push("- [x] `./launcher cleanup` performed".to_string());
+    } else {
+        body.push(format!(
+            "- [x] `./launcher cleanup` Total reclaimed space: {}",
+            reclaimed
+        ));
+    }
     body.push(format!("- [x] Root disk usage (df -h /): {}", root_disk));
     let test_marker = std::env::var("DSC_TEST_MARKER").ok();
     if let Some(marker) = &test_marker {

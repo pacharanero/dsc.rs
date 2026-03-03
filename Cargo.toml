@@ -1,6 +1,6 @@
 [package]
 name = "dsc"
-version = "0.1.2"
+version = "0.1.4"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/pacharanero/dsc.rs"
@@ -35,5 +35,5 @@ toml = "0.9"
 indicatif = "0.18"
 
 [dev-dependencies]
-tempfile = "3.24"
-uuid = { version = "1.20", features = ["v4"] }
+tempfile = "3.26"
+uuid = { version = "1.21", features = ["v4"] }

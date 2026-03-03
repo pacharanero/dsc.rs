@@ -62,10 +62,10 @@ If `<path>` is omitted, input is read from stdin.
 
 `dsc` will attempt to populate the name and fullname fields by querying the Discourse URL for the site title.
 
-### `dsc update <name|all> [--post-changelog] [--yes] [--parallel] [--max <n>]`
+### `dsc update <name|all> [--no-changelog] [--yes] [--parallel] [--max <n>]`
 
 Updates the Discourse install identified by `<name>` over SSH.
-Optionally makes a post in the Changelog topic about the update.
+By default, it also prompts to post an update checklist in the configured changelog topic.
 
 Version and cleanup data should be collected during the update and used to fill the checklist:
 
@@ -81,8 +81,8 @@ Version and cleanup data should be collected during the update and used to fill 
 
 Flags:
 
-- `--post-changelog` (or `-g`) prints the checklist to stdout and prompts before posting to `changelog_topic_id`.
-- `--yes` (or `-y`) auto-confirms changelog posting; only valid with `--post-changelog`.
+- `--no-changelog` skips changelog posting.
+- `--yes` (or `-y`) auto-confirms changelog posting (non-interactive mode).
 - `--parallel` (or `-p`) is disabled for `dsc update all` because updates stop at first failure.
 - `--max <n>` (or `-m <n>`) is ignored when `--parallel` is disabled.
 
@@ -108,7 +108,7 @@ If the OS update command fails, `dsc update` aborts after attempting the rollbac
 
 Note: most forum read/write commands require `apikey` and `api_username`; if missing, the command fails with a clear message.
 
-### `dsc update all [--post-changelog] [--yes]`
+### `dsc update all [--no-changelog] [--yes]`
 
 Updates all Discourses known to `dsc` over SSH.
 
@@ -370,3 +370,5 @@ tags = ["tag1", "tag2"] # optional way to organise installs
   - `x86_64-pc-windows-msvc`
 - crates.io publishing is automated in CI on `v*` tags (requires `CARGO_REGISTRY_TOKEN`).
 - `CHANGELOG.md` should be updated for each release.
+- Team workflow: commit regularly during active work.
+- Team workflow: bump the crate version at least once per day when working on `dsc` (use `s/version++`).
