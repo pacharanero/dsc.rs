@@ -16,6 +16,7 @@ dsc.rs is a very cleverly-named Discourse CLI tool written in Rust, which does m
 Global option:
 
 - `dsc --config <path> <command>` (or `-c <path>`) to select a config file. Without `--config`, dsc searches common local/user/system paths and falls back to `./dsc.toml`.
+- CLI help quality requirement: every command, subcommand, argument, and flag must include concise `--help` text.
 
 ### `dsc list [--format <format>] [--tags <tag1,tag2,...>]`
 
