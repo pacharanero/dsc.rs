@@ -1,18 +1,40 @@
-use crate::cli::StructuredFormat;
+use crate::api::DiscourseClient;
+use crate::api::GroupSummary;
+use crate::cli::{ListFormat, StructuredFormat};
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
-use crate::api::DiscourseClient;
 use crate::utils::slugify;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
-pub fn group_list(config: &Config, discourse_name: &str) -> Result<()> {
+pub fn group_list(
+    config: &Config,
+    discourse_name: &str,
+    format: ListFormat,
+    verbose: bool,
+) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     let groups = client.fetch_groups()?;
-    for group in groups {
-        let full_name = group.full_name.unwrap_or_else(|| "-".to_string());
-        println!("{} - {} ({})", group.id, group.name, full_name);
+    match format {
+        ListFormat::Text => {
+            if groups.is_empty() && !verbose {
+                println!("No groups found.");
+                return Ok(());
+            }
+            for group in groups {
+                let full_name = group.full_name.unwrap_or_else(|| "-".to_string());
+                println!("{} - {} ({})", group.id, group.name, full_name);
+            }
+        }
+        ListFormat::Json => {
+            let raw = serde_json::to_string_pretty(&groups)?;
+            println!("{}", raw);
+        }
+        ListFormat::Yaml => {
+            let raw = serde_yaml::to_string(&groups)?;
+            println!("{}", raw);
+        }
     }
     Ok(())
 }
@@ -26,11 +48,7 @@ pub fn group_info(
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
-    let groups = client.fetch_groups()?;
-    let group_summary = groups
-        .into_iter()
-        .find(|item| item.id == group_id)
-        .ok_or_else(|| anyhow!("group not found"))?;
+    let group_summary = find_group_summary(&client, group_id)?;
     let group = client.fetch_group_detail(group_summary.id, Some(&group_summary.name))?;
     match format {
         StructuredFormat::Json => {
@@ -39,6 +57,40 @@ pub fn group_info(
         }
         StructuredFormat::Yaml => {
             let raw = serde_yaml::to_string(&group)?;
+            println!("{}", raw);
+        }
+    }
+    Ok(())
+}
+
+pub fn group_members(
+    config: &Config,
+    discourse_name: &str,
+    group_id: u64,
+    format: ListFormat,
+) -> Result<()> {
+    let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
+    let client = DiscourseClient::new(discourse)?;
+    let group_summary = find_group_summary(&client, group_id)?;
+    let members = client.fetch_group_members(group_summary.id, Some(&group_summary.name))?;
+    match format {
+        ListFormat::Text => {
+            if members.is_empty() {
+                println!("No group members found.");
+                return Ok(());
+            }
+            for member in members {
+                let name = member.name.unwrap_or_else(|| "-".to_string());
+                println!("{} - {} ({})", member.id, member.username, name);
+            }
+        }
+        ListFormat::Json => {
+            let raw = serde_json::to_string_pretty(&members)?;
+            println!("{}", raw);
+        }
+        ListFormat::Yaml => {
+            let raw = serde_yaml::to_string(&members)?;
             println!("{}", raw);
         }
     }
@@ -59,11 +111,7 @@ pub fn group_copy(
     ensure_api_credentials(target_discourse)?;
 
     let source_client = DiscourseClient::new(source_discourse)?;
-    let groups = source_client.fetch_groups()?;
-    let group_summary = groups
-        .into_iter()
-        .find(|item| item.id == group_id)
-        .ok_or_else(|| anyhow!("group not found"))?;
+    let group_summary = find_group_summary(&source_client, group_id)?;
     let mut group =
         source_client.fetch_group_detail(group_summary.id, Some(&group_summary.name))?;
     group.name = format!("{}-copy", slugify(&group.name));
@@ -73,6 +121,14 @@ pub fn group_copy(
 
     let target_client = DiscourseClient::new(target_discourse)?;
     let new_id = target_client.create_group(&group)?;
-    println!("{}", new_id);
+    println!("Group copied successfully with new ID: {}", new_id);
     Ok(())
+}
+
+fn find_group_summary(client: &DiscourseClient, group_id: u64) -> Result<GroupSummary> {
+    let groups = client.fetch_groups()?;
+    groups
+        .into_iter()
+        .find(|item| item.id == group_id)
+        .ok_or_else(|| anyhow!("group not found: {}", group_id))
 }

@@ -53,7 +53,7 @@ pub struct Post {
     pub created_at: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CustomEmoji {
     pub name: String,
     pub url: String,
@@ -68,7 +68,7 @@ pub struct CategoryResponse {
 }
 
 /// Category metadata.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct CategoryInfo {
     pub name: String,
     pub slug: String,
@@ -102,7 +102,7 @@ pub struct TopicList {
 }
 
 /// Topic summary.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TopicSummary {
     pub id: u64,
     pub title: String,
@@ -110,7 +110,7 @@ pub struct TopicSummary {
 }
 
 /// Group summary.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct GroupSummary {
     pub id: u64,
     pub name: String,
@@ -122,6 +122,19 @@ pub struct GroupSummary {
 #[derive(Debug, Deserialize)]
 pub struct GroupsResponse {
     pub groups: Vec<GroupSummary>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct GroupMember {
+    pub id: u64,
+    pub username: String,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GroupMembersResponse {
+    pub members: Vec<GroupMember>,
 }
 
 /// Response payload for group detail.

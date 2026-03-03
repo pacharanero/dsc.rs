@@ -1,12 +1,13 @@
 use super::client::DiscourseClient;
-use anyhow::{anyhow, Context, Result};
+use super::error::http_error;
+use anyhow::{Context, Result, anyhow};
 
 impl DiscourseClient {
     /// Update a site setting by name (admin only).
     pub fn update_site_setting(&self, setting: &str, value: &str) -> Result<()> {
         let setting = setting.trim();
         if setting.is_empty() {
-            return Err(anyhow!("site setting name is required"));
+            return Err(anyhow!("missing site setting name for site setting update"));
         }
         if setting.chars().any(|ch| ch.is_whitespace() || ch == '/') {
             return Err(anyhow!(
@@ -25,11 +26,7 @@ impl DiscourseClient {
             .text()
             .context("reading site setting update response")?;
         if !status.is_success() {
-            return Err(anyhow!(
-                "update site setting failed with {}: {}",
-                status,
-                text
-            ));
+            return Err(http_error("update site setting request", status, &text));
         }
         Ok(())
     }

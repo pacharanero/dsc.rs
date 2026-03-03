@@ -1,5 +1,6 @@
 use super::client::DiscourseClient;
-use anyhow::{anyhow, Context, Result};
+use super::error::http_error;
+use anyhow::{Context, Result};
 use serde_json::Value;
 
 impl DiscourseClient {
@@ -14,7 +15,7 @@ impl DiscourseClient {
         let status = response.status();
         let text = response.text().context("reading backup create response")?;
         if !status.is_success() {
-            return Err(anyhow!("create backup failed with {}: {}", status, text));
+            return Err(http_error("create backup request", status, &text));
         }
         Ok(())
     }
@@ -25,7 +26,7 @@ impl DiscourseClient {
         let status = response.status();
         let text = response.text().context("reading backups list response")?;
         if !status.is_success() {
-            return Err(anyhow!("list backups failed with {}: {}", status, text));
+            return Err(http_error("list backups request", status, &text));
         }
         let body: Value = serde_json::from_str(&text).context("parsing backups list json")?;
         Ok(body)
@@ -38,7 +39,7 @@ impl DiscourseClient {
         let status = response.status();
         let text = response.text().context("reading backup restore response")?;
         if !status.is_success() {
-            return Err(anyhow!("restore backup failed with {}: {}", status, text));
+            return Err(http_error("restore backup request", status, &text));
         }
         Ok(())
     }

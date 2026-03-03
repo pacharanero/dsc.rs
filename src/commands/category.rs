@@ -1,12 +1,19 @@
+use crate::api::{CategoryInfo, DiscourseClient, TopicSummary};
+use crate::cli::ListFormat;
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
-use crate::api::{CategoryInfo, DiscourseClient, TopicSummary};
 use crate::utils::{ensure_dir, read_markdown, slugify, write_markdown};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::Path;
 
-pub fn category_list(config: &Config, discourse_name: &str, tree: bool) -> Result<()> {
+pub fn category_list(
+    config: &Config,
+    discourse_name: &str,
+    format: ListFormat,
+    verbose: bool,
+    tree: bool,
+) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
@@ -15,50 +22,84 @@ pub fn category_list(config: &Config, discourse_name: &str, tree: bool) -> Resul
     for category in categories {
         flatten_categories(&category, &mut flat);
     }
-    if tree {
-        print_category_tree(&flat);
-    } else {
-        let mut seen = std::collections::HashSet::new();
-        for category in flat {
-            if let Some(id) = category.id {
-                if !seen.insert(id) {
-                    continue;
+    match format {
+        ListFormat::Text => {
+            if tree {
+                if flat.is_empty() && !verbose {
+                    println!("No categories found.");
+                    return Ok(());
+                }
+                print_category_tree(&flat);
+            } else {
+                let unique = unique_categories(flat);
+                if unique.is_empty() && !verbose {
+                    println!("No categories found.");
+                    return Ok(());
+                }
+                for category in unique {
+                    let id = category.id.unwrap_or_default();
+                    println!("{} - {}", id, category.name);
                 }
             }
-            let id = category.id.unwrap_or_default();
-            println!("{} - {}", id, category.name);
+        }
+        ListFormat::Json => {
+            if tree {
+                return Err(anyhow!("--tree is only supported with --format text"));
+            }
+            let unique = unique_categories(flat);
+            let raw = serde_json::to_string_pretty(&unique)?;
+            println!("{}", raw);
+        }
+        ListFormat::Yaml => {
+            if tree {
+                return Err(anyhow!("--tree is only supported with --format text"));
+            }
+            let unique = unique_categories(flat);
+            let raw = serde_yaml::to_string(&unique)?;
+            println!("{}", raw);
         }
     }
     Ok(())
 }
 
-pub fn category_copy(config: &Config, discourse_name: &str, category_id: u64) -> Result<()> {
-    let discourse = select_discourse(config, Some(discourse_name))?;
-    ensure_api_credentials(discourse)?;
-    let client = DiscourseClient::new(discourse)?;
-    let categories = client.fetch_categories()?;
+pub fn category_copy(
+    config: &Config,
+    source: &str,
+    target: Option<&str>,
+    category: &str,
+) -> Result<()> {
+    let source_discourse = select_discourse(config, Some(source))?;
+    let target_name = target.unwrap_or(source);
+    let target_discourse = select_discourse(config, Some(target_name))?;
+    ensure_api_credentials(source_discourse)?;
+    ensure_api_credentials(target_discourse)?;
+    let source_client = DiscourseClient::new(source_discourse)?;
+    let category_id = resolve_category_id(&source_client, category)?;
+    let categories = source_client.fetch_categories()?;
     let category = categories
         .into_iter()
         .find(|cat| cat.id == Some(category_id))
-        .ok_or_else(|| anyhow!("category not found"))?;
+        .ok_or_else(|| anyhow!("category not found: {}", category_id))?;
     let mut copied = category.clone();
     copied.name = format!("Copy of {}", category.name);
     copied.slug = format!("{}-copy", category.slug);
     copied.id = None;
-    let new_id = client.create_category(&copied)?;
-    println!("{}", new_id);
+    let target_client = DiscourseClient::new(target_discourse)?;
+    let new_id = target_client.create_category(&copied)?;
+    println!("Category copied successfully with new ID: {}", new_id);
     Ok(())
 }
 
 pub fn category_pull(
     config: &Config,
     discourse_name: &str,
-    category_id: u64,
+    category: &str,
     local_path: Option<&Path>,
 ) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
+    let category_id = resolve_category_id(&client, category)?;
     let category = client.fetch_category(category_id)?;
     let dir = match local_path {
         Some(path) => path.to_path_buf(),
@@ -83,19 +124,20 @@ pub fn category_pull(
         let filename = format!("{}.md", slugify(&topic.title));
         write_markdown(&dir.join(filename), &raw)?;
     }
-    println!("{}", dir.display());
+    println!("Category topics pulled to: {}", dir.display());
     Ok(())
 }
 
 pub fn category_push(
     config: &Config,
     discourse_name: &str,
-    category_id: u64,
+    category: &str,
     local_path: &Path,
 ) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
+    let category_id = resolve_category_id(&client, category)?;
     let existing = client.fetch_category(category_id)?;
     let mut topics = existing.topic_list.topics;
     let entries =
@@ -129,11 +171,45 @@ pub fn category_push(
     Ok(())
 }
 
+fn resolve_category_id(client: &DiscourseClient, category: &str) -> Result<u64> {
+    if let Ok(id) = category.parse::<u64>() {
+        return Ok(id);
+    }
+    let slug = category.trim();
+    if slug.is_empty() {
+        return Err(anyhow!(
+            "missing category identifier for category operation"
+        ));
+    }
+    let categories = client.fetch_categories()?;
+    let category = categories
+        .into_iter()
+        .find(|cat| cat.slug == slug)
+        .ok_or_else(|| anyhow!("category not found: {}", slug))?;
+    category
+        .id
+        .ok_or_else(|| anyhow!("category not found: {}", slug))
+}
+
 fn flatten_categories(category: &CategoryInfo, out: &mut Vec<CategoryInfo>) {
     out.push(category.clone());
     for sub in &category.subcategory_list {
         flatten_categories(sub, out);
     }
+}
+
+fn unique_categories(flat: Vec<CategoryInfo>) -> Vec<CategoryInfo> {
+    let mut seen = std::collections::HashSet::new();
+    let mut unique = Vec::new();
+    for category in flat {
+        if let Some(id) = category.id {
+            if !seen.insert(id) {
+                continue;
+            }
+        }
+        unique.push(category);
+    }
+    unique
 }
 
 fn print_category_tree(categories: &[CategoryInfo]) {

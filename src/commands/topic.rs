@@ -1,8 +1,8 @@
+use crate::api::DiscourseClient;
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
-use crate::api::DiscourseClient;
 use crate::utils::{read_markdown, resolve_topic_path, write_markdown};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
@@ -38,7 +38,7 @@ pub fn topic_pull(
         .unwrap_or_else(|| format!("topic-{}", topic_id));
     let target = resolve_topic_path(local_path, &title, &std::env::current_dir()?)?;
     write_markdown(&target, &raw)?;
-    println!("{}", target.display());
+    println!("Topic pulled to: {}", target.display());
     Ok(())
 }
 

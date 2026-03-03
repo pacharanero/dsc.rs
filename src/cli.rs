@@ -6,8 +6,8 @@ use std::path::PathBuf;
 #[command(name = "dsc")]
 #[command(about = "Discourse CLI", long_about = None)]
 pub struct Cli {
-    #[arg(long, short = 'c', default_value = "dsc.toml")]
-    pub config: PathBuf,
+    #[arg(long, short = 'c')]
+    pub config: Option<PathBuf>,
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -16,10 +16,12 @@ pub struct Cli {
 pub enum Commands {
     #[command(visible_alias = "ls")]
     List {
-        #[arg(long, short = 'f', value_enum, default_value = "plaintext")]
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
         format: OutputFormat,
         #[arg(long, value_name = "tag1,tag2")]
         tags: Option<String>,
+        #[arg(long, short = 'v')]
+        verbose: bool,
         #[command(subcommand)]
         command: Option<ListCommand>,
     },
@@ -33,11 +35,11 @@ pub enum Commands {
     },
     Update {
         name: String,
-        #[arg(long, short = 'C')]
-        concurrent: bool,
+        #[arg(long, short = 'p')]
+        parallel: bool,
         #[arg(long, short = 'm')]
         max: Option<usize>,
-        #[arg(long, short = 'p')]
+        #[arg(long, short = 'g')]
         post_changelog: bool,
     },
     Emoji {
@@ -102,6 +104,10 @@ pub enum EmojiCommand {
     /// List custom emojis on a Discourse.
     List {
         discourse: String,
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
+        format: ListFormat,
+        #[arg(long, short = 'v')]
+        verbose: bool,
         #[arg(long, short = 'i')]
         inline: bool,
     },
@@ -132,22 +138,28 @@ pub enum TopicCommand {
 pub enum CategoryCommand {
     List {
         discourse: String,
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
+        format: ListFormat,
+        #[arg(long, short = 'v')]
+        verbose: bool,
         #[arg(long)]
         tree: bool,
     },
     Copy {
         discourse: String,
-        category_id: u64,
+        #[arg(long, short = 't')]
+        target: Option<String>,
+        category: String,
     },
     Pull {
         discourse: String,
-        category_id: u64,
+        category: String,
         local_path: Option<PathBuf>,
     },
     Push {
         discourse: String,
         local_path: PathBuf,
-        category_id: u64,
+        category: String,
     },
 }
 
@@ -155,12 +167,22 @@ pub enum CategoryCommand {
 pub enum GroupCommand {
     List {
         discourse: String,
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
+        format: ListFormat,
+        #[arg(long, short = 'v')]
+        verbose: bool,
     },
     Info {
         discourse: String,
         group: u64,
         #[arg(long, short = 'f', value_enum, default_value = "json")]
         format: StructuredFormat,
+    },
+    Members {
+        discourse: String,
+        group: u64,
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
+        format: ListFormat,
     },
     Copy {
         discourse: String,
@@ -177,8 +199,10 @@ pub enum BackupCommand {
     },
     List {
         discourse: String,
-        #[arg(long, short = 'f', value_enum, default_value = "plaintext")]
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
         format: OutputFormat,
+        #[arg(long, short = 'v')]
+        verbose: bool,
     },
     Restore {
         discourse: String,
@@ -190,6 +214,10 @@ pub enum BackupCommand {
 pub enum PaletteCommand {
     List {
         discourse: String,
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
+        format: ListFormat,
+        #[arg(long, short = 'v')]
+        verbose: bool,
     },
     Pull {
         discourse: String,
@@ -205,16 +233,40 @@ pub enum PaletteCommand {
 
 #[derive(Subcommand)]
 pub enum PluginCommand {
-    List { discourse: String },
-    Install { discourse: String, url: String },
-    Remove { discourse: String, name: String },
+    List {
+        discourse: String,
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
+        format: ListFormat,
+        #[arg(long, short = 'v')]
+        verbose: bool,
+    },
+    Install {
+        discourse: String,
+        url: String,
+    },
+    Remove {
+        discourse: String,
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
 pub enum ThemeCommand {
-    List { discourse: String },
-    Install { discourse: String, url: String },
-    Remove { discourse: String, name: String },
+    List {
+        discourse: String,
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
+        format: ListFormat,
+        #[arg(long, short = 'v')]
+        verbose: bool,
+    },
+    Install {
+        discourse: String,
+        url: String,
+    },
+    Remove {
+        discourse: String,
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -246,16 +298,27 @@ impl From<CompletionShell> for Shell {
 
 #[derive(ValueEnum, Clone)]
 pub enum OutputFormat {
-    Plaintext,
+    #[value(alias = "plaintext")]
+    Text,
     Markdown,
     MarkdownTable,
     Json,
+    #[value(alias = "yml")]
     Yaml,
     Csv,
 }
 
 #[derive(ValueEnum, Clone, Copy)]
+pub enum ListFormat {
+    Text,
+    Json,
+    #[value(alias = "yml")]
+    Yaml,
+}
+
+#[derive(ValueEnum, Clone, Copy)]
 pub enum StructuredFormat {
     Json,
+    #[value(alias = "yml")]
     Yaml,
 }

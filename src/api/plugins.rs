@@ -1,7 +1,8 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use serde_json::Value;
 
 use super::client::DiscourseClient;
+use super::error::http_error;
 
 impl DiscourseClient {
     /// List installed plugins on the Discourse instance.
@@ -10,7 +11,7 @@ impl DiscourseClient {
         let status = response.status();
         let text = response.text().context("reading plugins response body")?;
         if !status.is_success() {
-            return Err(anyhow!("plugins request failed with {}: {}", status, text));
+            return Err(http_error("plugins request", status, &text));
         }
         let value: Value = serde_json::from_str(&text).context("parsing plugins response")?;
         Ok(value)

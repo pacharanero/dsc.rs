@@ -2,7 +2,7 @@ use crate::cli::{Cli, CompletionShell};
 use crate::utils::ensure_dir;
 use anyhow::{Context, Result};
 use clap::CommandFactory;
-use clap_complete::{generate, Shell};
+use clap_complete::{Shell, generate};
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -32,7 +32,7 @@ pub fn write_completions(shell: CompletionShell, dir: Option<&Path>) -> Result<(
                     .with_context(|| format!("creating {}", path.display()))?;
                 generate(generator, &mut cmd, name, &mut file);
             }
-            println!("{}", path.display());
+            println!("Completion script written to: {}", path.display());
         }
         None => {
             let generator: Shell = shell.into();

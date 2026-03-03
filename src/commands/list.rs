@@ -1,6 +1,6 @@
 use crate::cli::OutputFormat;
 use crate::commands::common::{fetch_fullname_from_url, parse_tags};
-use crate::config::{save_config, Config, DiscourseConfig};
+use crate::config::{Config, DiscourseConfig, save_config};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::io;
@@ -77,7 +77,12 @@ pub fn list_tidy(config_path: &Path, config: &mut Config) -> Result<()> {
     Ok(())
 }
 
-pub fn list_discourses(config: &Config, format: OutputFormat, tags: Option<&str>) -> Result<()> {
+pub fn list_discourses(
+    config: &Config,
+    format: OutputFormat,
+    tags: Option<&str>,
+    verbose: bool,
+) -> Result<()> {
     let filter = tags.map(parse_tags).unwrap_or_default();
     let matches_filter = |disc: &DiscourseConfig| {
         if filter.is_empty() {
@@ -97,9 +102,19 @@ pub fn list_discourses(config: &Config, format: OutputFormat, tags: Option<&str>
         })
     };
 
+    let filtered: Vec<_> = config
+        .discourse
+        .iter()
+        .filter(|d| matches_filter(d))
+        .collect();
+
     match format {
-        OutputFormat::Plaintext => {
-            for d in config.discourse.iter().filter(|d| matches_filter(d)) {
+        OutputFormat::Text => {
+            if filtered.is_empty() && !verbose {
+                println!("No discourses found.");
+                return Ok(());
+            }
+            for d in filtered.iter().copied() {
                 let fullname = d.fullname.as_deref().unwrap_or("");
                 if fullname.is_empty() {
                     println!("{} - {}", d.name, d.baseurl);
@@ -109,7 +124,7 @@ pub fn list_discourses(config: &Config, format: OutputFormat, tags: Option<&str>
             }
         }
         OutputFormat::Markdown => {
-            for d in config.discourse.iter().filter(|d| matches_filter(d)) {
+            for d in filtered.iter().copied() {
                 let fullname = d.fullname.as_deref().unwrap_or("");
                 if fullname.is_empty() {
                     println!("- {} ({})", d.name, d.baseurl);
@@ -121,33 +136,23 @@ pub fn list_discourses(config: &Config, format: OutputFormat, tags: Option<&str>
         OutputFormat::MarkdownTable => {
             println!("| Name | Full Name | Base URL |");
             println!("| --- | --- | --- |");
-            for d in config.discourse.iter().filter(|d| matches_filter(d)) {
+            for d in filtered.iter().copied() {
                 let fullname = d.fullname.as_deref().unwrap_or("");
                 println!("| {} | {} | {} |", d.name, fullname, d.baseurl);
             }
         }
         OutputFormat::Json => {
-            let filtered: Vec<_> = config
-                .discourse
-                .iter()
-                .filter(|d| matches_filter(d))
-                .collect();
             let raw = serde_json::to_string_pretty(&filtered)?;
             println!("{}", raw);
         }
         OutputFormat::Yaml => {
-            let filtered: Vec<_> = config
-                .discourse
-                .iter()
-                .filter(|d| matches_filter(d))
-                .collect();
             let raw = serde_yaml::to_string(&filtered)?;
             println!("{}", raw);
         }
         OutputFormat::Csv => {
             let mut writer = csv::Writer::from_writer(io::stdout());
             writer.write_record(["name", "fullname", "baseurl", "tags"])?;
-            for d in config.discourse.iter().filter(|d| matches_filter(d)) {
+            for d in filtered.iter().copied() {
                 let tags = d.tags.as_ref().map(|t| t.join(";")).unwrap_or_default();
                 let fullname = d.fullname.as_deref().unwrap_or("");
                 writer.write_record([d.name.as_str(), fullname, d.baseurl.as_str(), &tags])?;

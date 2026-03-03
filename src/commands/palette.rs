@@ -1,13 +1,14 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
+use crate::api::DiscourseClient;
+use crate::cli::ListFormat;
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
-use crate::api::DiscourseClient;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct PaletteFile {
@@ -17,7 +18,18 @@ struct PaletteFile {
     colors: BTreeMap<String, String>,
 }
 
-pub fn palette_list(config: &Config, discourse_name: &str) -> Result<()> {
+#[derive(Debug, Serialize)]
+struct PaletteListEntry {
+    id: u64,
+    name: String,
+}
+
+pub fn palette_list(
+    config: &Config,
+    discourse_name: &str,
+    format: ListFormat,
+    verbose: bool,
+) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
@@ -27,18 +39,42 @@ pub fn palette_list(config: &Config, discourse_name: &str) -> Result<()> {
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
-    for scheme in schemes {
-        let id = scheme
-            .get("id")
-            .or_else(|| scheme.get("color_scheme_id"))
-            .and_then(|v| v.as_u64())
-            .unwrap_or_default();
-        let name = scheme
-            .get("name")
-            .or_else(|| scheme.get("color_scheme_name"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
-        println!("{} - {}", id, name);
+    let entries: Vec<PaletteListEntry> = schemes
+        .into_iter()
+        .map(|scheme| {
+            let id = scheme
+                .get("id")
+                .or_else(|| scheme.get("color_scheme_id"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or_default();
+            let name = scheme
+                .get("name")
+                .or_else(|| scheme.get("color_scheme_name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            PaletteListEntry { id, name }
+        })
+        .collect();
+
+    match format {
+        ListFormat::Text => {
+            if entries.is_empty() && !verbose {
+                println!("No palettes found.");
+                return Ok(());
+            }
+            for entry in entries {
+                println!("{} - {}", entry.id, entry.name);
+            }
+        }
+        ListFormat::Json => {
+            let raw = serde_json::to_string_pretty(&entries)?;
+            println!("{}", raw);
+        }
+        ListFormat::Yaml => {
+            let raw = serde_yaml::to_string(&entries)?;
+            println!("{}", raw);
+        }
     }
     Ok(())
 }
@@ -63,7 +99,7 @@ pub fn palette_pull(
         }
     };
     write_palette_file(&path, &palette)?;
-    println!("{}", path.display());
+    println!("Palette saved to: {}", path.display());
     Ok(())
 }
 
@@ -85,15 +121,15 @@ pub fn palette_push(
     let target_id = palette_id.or(palette.id);
     if let Some(target_id) = target_id {
         client.update_color_scheme(target_id, Some(&palette.name), &palette.colors)?;
-        println!("{}", target_id);
+        println!("Palette updated successfully with ID: {}", target_id);
     } else {
         if palette.name.trim().is_empty() {
-            return Err(anyhow!("palette name is required when creating"));
+            return Err(anyhow!("missing palette name for palette create"));
         }
         let new_id = client.create_color_scheme(&palette.name, &palette.colors)?;
         palette.id = Some(new_id);
         write_palette_file(local_path, &palette)?;
-        println!("{}", new_id);
+        println!("Palette created successfully with ID: {}", new_id);
     }
 
     Ok(())

@@ -2,46 +2,56 @@ use anyhow::{Result, anyhow};
 use clap::Parser;
 use dsc::cli::*;
 use dsc::commands;
-use dsc::config::{load_config, save_config};
+use dsc::config::{load_config, resolve_default_config_path, save_config};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let mut config = load_config(&cli.config)?;
+    let config_path = cli.config.unwrap_or_else(resolve_default_config_path);
+    let mut config = load_config(&config_path)?;
 
     match cli.command {
         Commands::List {
             command: Some(ListCommand::Tidy),
             tags,
+            verbose,
             ..
-        } => match tags {
-            Some(_) => Err(anyhow!("--tags is not supported with 'dsc list tidy'")),
-            None => commands::list::list_tidy(&cli.config, &mut config),
-        },
-
-        Commands::List { format, tags, .. } => {
-            commands::list::list_discourses(&config, format, tags.as_deref())
+        } => {
+            if verbose {
+                return Err(anyhow!("--verbose is not supported with 'dsc list tidy'"));
+            }
+            match tags {
+                Some(_) => Err(anyhow!("--tags is not supported with 'dsc list tidy'")),
+                None => commands::list::list_tidy(&config_path, &mut config),
+            }
         }
+
+        Commands::List {
+            format,
+            tags,
+            verbose,
+            ..
+        } => commands::list::list_discourses(&config, format, tags.as_deref(), verbose),
 
         Commands::Add { names, interactive } => {
             commands::add::add_discourses(&mut config, &names, interactive)?;
-            save_config(&cli.config, &config)
+            save_config(&config_path, &config)
         }
 
         Commands::Import { path } => {
             commands::import::import_discourses(&mut config, path.as_deref())?;
-            save_config(&cli.config, &config)
+            save_config(&config_path, &config)
         }
 
         Commands::Update {
             name,
-            concurrent,
+            parallel,
             max,
             post_changelog,
         } => match name.as_str() {
-            "all" if max.is_some() && !concurrent => Err(anyhow!("--max requires --concurrent")),
-            "all" => commands::update::update_all(&config, concurrent, max, post_changelog),
-            _ if concurrent || max.is_some() => {
-                Err(anyhow!("--concurrent/--max only apply to 'dsc update all'"))
+            "all" if max.is_some() && !parallel => Err(anyhow!("--max requires --parallel")),
+            "all" => commands::update::update_all(&config, parallel, max, post_changelog),
+            _ if parallel || max.is_some() => {
+                Err(anyhow!("--parallel/--max only apply to 'dsc update all'"))
             }
             _ => commands::update::update_one(&config, &name, post_changelog),
         },
@@ -56,8 +66,14 @@ fn main() -> Result<()> {
         } => commands::emoji::add_emoji(&config, &discourse, &emoji_path, emoji_name.as_deref()),
 
         Commands::Emoji {
-            command: EmojiCommand::List { discourse, inline },
-        } => commands::emoji::list_emojis(&config, &discourse, inline),
+            command:
+                EmojiCommand::List {
+                    discourse,
+                    format,
+                    verbose,
+                    inline,
+                },
+        } => commands::emoji::list_emojis(&config, &discourse, format, verbose, inline),
 
         Commands::Topic { command } => match command {
             TopicCommand::Pull {
@@ -81,40 +97,55 @@ fn main() -> Result<()> {
         },
 
         Commands::Category { command } => match command {
-            CategoryCommand::List { discourse, tree } => {
-                commands::category::category_list(&config, &discourse, tree)
-            }
+            CategoryCommand::List {
+                discourse,
+                format,
+                verbose,
+                tree,
+            } => commands::category::category_list(&config, &discourse, format, verbose, tree),
 
             CategoryCommand::Copy {
                 discourse,
-                category_id,
-            } => commands::category::category_copy(&config, &discourse, category_id),
+                target,
+                category,
+            } => {
+                commands::category::category_copy(&config, &discourse, target.as_deref(), &category)
+            }
 
             CategoryCommand::Pull {
                 discourse,
-                category_id,
+                category,
                 local_path,
             } => commands::category::category_pull(
                 &config,
                 &discourse,
-                category_id,
+                &category,
                 local_path.as_deref(),
             ),
 
             CategoryCommand::Push {
                 discourse,
                 local_path,
-                category_id,
-            } => commands::category::category_push(&config, &discourse, category_id, &local_path),
+                category,
+            } => commands::category::category_push(&config, &discourse, &category, &local_path),
         },
 
         Commands::Group { command } => match command {
-            GroupCommand::List { discourse } => commands::group::group_list(&config, &discourse),
+            GroupCommand::List {
+                discourse,
+                format,
+                verbose,
+            } => commands::group::group_list(&config, &discourse, format, verbose),
             GroupCommand::Info {
                 discourse,
                 group,
                 format,
             } => commands::group::group_info(&config, &discourse, group, format),
+            GroupCommand::Members {
+                discourse,
+                group,
+                format,
+            } => commands::group::group_members(&config, &discourse, group, format),
 
             GroupCommand::Copy {
                 discourse,
@@ -128,9 +159,11 @@ fn main() -> Result<()> {
                 commands::backup::backup_create(&config, &discourse)
             }
 
-            BackupCommand::List { discourse, format } => {
-                commands::backup::backup_list(&config, &discourse, format)
-            }
+            BackupCommand::List {
+                discourse,
+                format,
+                verbose,
+            } => commands::backup::backup_list(&config, &discourse, format, verbose),
 
             BackupCommand::Restore {
                 discourse,
@@ -139,9 +172,11 @@ fn main() -> Result<()> {
         },
 
         Commands::Palette { command } => match command {
-            PaletteCommand::List { discourse } => {
-                commands::palette::palette_list(&config, &discourse)
-            }
+            PaletteCommand::List {
+                discourse,
+                format,
+                verbose,
+            } => commands::palette::palette_list(&config, &discourse, format, verbose),
 
             PaletteCommand::Pull {
                 discourse,
@@ -162,7 +197,11 @@ fn main() -> Result<()> {
         },
 
         Commands::Plugin { command } => match command {
-            PluginCommand::List { discourse } => commands::plugin::plugin_list(&config, &discourse),
+            PluginCommand::List {
+                discourse,
+                format,
+                verbose,
+            } => commands::plugin::plugin_list(&config, &discourse, format, verbose),
             PluginCommand::Install { discourse, url } => {
                 commands::plugin::plugin_install(&config, &discourse, &url)
             }
@@ -172,7 +211,11 @@ fn main() -> Result<()> {
         },
 
         Commands::Theme { command } => match command {
-            ThemeCommand::List { discourse } => commands::theme::theme_list(&config, &discourse),
+            ThemeCommand::List {
+                discourse,
+                format,
+                verbose,
+            } => commands::theme::theme_list(&config, &discourse, format, verbose),
             ThemeCommand::Install { discourse, url } => {
                 commands::theme::theme_install(&config, &discourse, &url)
             }

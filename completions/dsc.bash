@@ -148,6 +148,9 @@ _dsc() {
             dsc__group,list)
                 cmd="dsc__group__list"
                 ;;
+            dsc__group,members)
+                cmd="dsc__group__members"
+                ;;
             dsc__group__help,copy)
                 cmd="dsc__group__help__copy"
                 ;;
@@ -159,6 +162,9 @@ _dsc() {
                 ;;
             dsc__group__help,list)
                 cmd="dsc__group__help__list"
+                ;;
+            dsc__group__help,members)
+                cmd="dsc__group__help__members"
                 ;;
             dsc__help,add)
                 cmd="dsc__help__add"
@@ -240,6 +246,9 @@ _dsc() {
                 ;;
             dsc__help__group,list)
                 cmd="dsc__help__group__list"
+                ;;
+            dsc__help__group,members)
+                cmd="dsc__help__group__members"
                 ;;
             dsc__help__list,tidy)
                 cmd="dsc__help__list__tidy"
@@ -544,18 +553,18 @@ _dsc() {
             return 0
             ;;
         dsc__backup__list)
-            opts="-f -h --format --help <DISCOURSE>"
+            opts="-f -v -h --format --verbose --help <DISCOURSE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --format)
-                    COMPREPLY=($(compgen -W "plaintext markdown markdown-table json yaml csv" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "text markdown markdown-table json yaml csv" -- "${cur}"))
                     return 0
                     ;;
                 -f)
-                    COMPREPLY=($(compgen -W "plaintext markdown markdown-table json yaml csv" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "text markdown markdown-table json yaml csv" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -594,12 +603,20 @@ _dsc() {
             return 0
             ;;
         dsc__category__copy)
-            opts="-h --help <DISCOURSE> <CATEGORY_ID>"
+            opts="-t -h --target --help <DISCOURSE> <CATEGORY_ID>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --target)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -692,12 +709,20 @@ _dsc() {
             return 0
             ;;
         dsc__category__list)
-            opts="-h --tree --help <DISCOURSE>"
+            opts="-f -v -h --format --verbose --tree --help <DISCOURSE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --format)
+                    COMPREPLY=($(compgen -W "text json yaml" -- "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -W "text json yaml" -- "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -840,12 +865,20 @@ _dsc() {
             return 0
             ;;
         dsc__emoji__list)
-            opts="-i -h --inline --help <DISCOURSE>"
+            opts="-f -v -i -h --format --verbose --inline --help <DISCOURSE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --format)
+                    COMPREPLY=($(compgen -W "text json yaml" -- "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -W "text json yaml" -- "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -854,7 +887,7 @@ _dsc() {
             return 0
             ;;
         dsc__group)
-            opts="-h --help list info copy help"
+            opts="-h --help list info members copy help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -890,7 +923,7 @@ _dsc() {
             return 0
             ;;
         dsc__group__help)
-            opts="list info copy help"
+            opts="list info members copy help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -959,6 +992,20 @@ _dsc() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        dsc__group__help__members)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         dsc__group__info)
             opts="-f -h --format --help <DISCOURSE> <GROUP>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -982,12 +1029,42 @@ _dsc() {
             return 0
             ;;
         dsc__group__list)
-            opts="-h --help <DISCOURSE>"
+            opts="-f -v -h --format --verbose --help <DISCOURSE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --format)
+                    COMPREPLY=($(compgen -W "text json yaml" -- "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -W "text json yaml" -- "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        dsc__group__members)
+            opts="-f -h --format --help <DISCOURSE> <GROUP>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --format)
+                    COMPREPLY=($(compgen -W "json yaml" -- "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -W "json yaml" -- "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -1206,7 +1283,7 @@ _dsc() {
             return 0
             ;;
         dsc__help__group)
-            opts="list info copy"
+            opts="list info members copy"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1248,6 +1325,20 @@ _dsc() {
             return 0
             ;;
         dsc__help__group__list)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        dsc__help__group__members)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1598,18 +1689,18 @@ _dsc() {
             return 0
             ;;
         dsc__list)
-            opts="-f -h --format --tags --help tidy help"
+            opts="-f -v -h --format --tags --verbose --help tidy help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --format)
-                    COMPREPLY=($(compgen -W "plaintext markdown markdown-table json yaml csv" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "text markdown markdown-table json yaml csv" -- "${cur}"))
                     return 0
                     ;;
                 -f)
-                    COMPREPLY=($(compgen -W "plaintext markdown markdown-table json yaml csv" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "text markdown markdown-table json yaml csv" -- "${cur}"))
                     return 0
                     ;;
                 --tags)
@@ -1764,12 +1855,20 @@ _dsc() {
             return 0
             ;;
         dsc__palette__list)
-            opts="-h --help <DISCOURSE>"
+            opts="-f -v -h --format --verbose --help <DISCOURSE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --format)
+                    COMPREPLY=($(compgen -W "text json yaml" -- "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -W "text json yaml" -- "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -1904,12 +2003,20 @@ _dsc() {
             return 0
             ;;
         dsc__plugin__list)
-            opts="-h --help <DISCOURSE>"
+            opts="-f -v -h --format --verbose --help <DISCOURSE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --format)
+                    COMPREPLY=($(compgen -W "text json yaml" -- "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -W "text json yaml" -- "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -2104,12 +2211,20 @@ _dsc() {
             return 0
             ;;
         dsc__theme__list)
-            opts="-h --help <DISCOURSE>"
+            opts="-f -v -h --format --verbose --help <DISCOURSE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --format)
+                    COMPREPLY=($(compgen -W "text json yaml" -- "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -W "text json yaml" -- "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -2258,7 +2373,7 @@ _dsc() {
             return 0
             ;;
         dsc__update)
-            opts="-C -m -p -h --concurrent --max --post-changelog --help <NAME>"
+            opts="-p -m -g -h --parallel --max --post-changelog --help <NAME>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

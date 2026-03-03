@@ -1,8 +1,9 @@
+use crate::api::DiscourseClient;
+use crate::cli::ListFormat;
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
-use crate::api::DiscourseClient;
 use crate::utils::slugify;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use base64::Engine;
 use std::fs;
 use std::path::Path;
@@ -43,7 +44,7 @@ pub fn add_emoji(
         for path in files {
             let name = emoji_name_from_path(&path)?;
             client.upload_emoji(&path, &name)?;
-            println!("uploaded {} from {}", name, path.display());
+            println!("Uploaded emoji {} from {}", name, path.display());
         }
         return Ok(());
     }
@@ -53,29 +54,54 @@ pub fn add_emoji(
         None => emoji_name_from_path(emoji_path)?,
     };
     client.upload_emoji(emoji_path, &name)?;
+    println!("Uploaded emoji {} from {}", name, emoji_path.display());
     Ok(())
 }
 
-pub fn list_emojis(config: &Config, discourse_name: &str, inline: bool) -> Result<()> {
+pub fn list_emojis(
+    config: &Config,
+    discourse_name: &str,
+    format: ListFormat,
+    verbose: bool,
+    inline: bool,
+) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
     let mut emojis = client.list_custom_emojis()?;
     emojis.sort_by(|a, b| a.name.cmp(&b.name));
 
-    if emojis.is_empty() {
-        println!("No custom emojis found");
-        return Ok(());
-    }
+    match format {
+        ListFormat::Text => {
+            if emojis.is_empty() && !verbose {
+                println!("No emojis found.");
+                return Ok(());
+            }
 
-    if inline {
-        if let Some(protocol) = detect_inline_protocol() {
-            print_inline_emojis(&emojis, protocol)?;
-        } else {
-            print_emojis_table(&emojis);
+            if inline {
+                if let Some(protocol) = detect_inline_protocol() {
+                    print_inline_emojis(&emojis, protocol)?;
+                } else {
+                    print_emojis_table(&emojis);
+                }
+            } else {
+                print_emojis_table(&emojis);
+            }
         }
-    } else {
-        print_emojis_table(&emojis);
+        ListFormat::Json => {
+            if inline {
+                return Err(anyhow!("--inline is only supported with --format text"));
+            }
+            let raw = serde_json::to_string_pretty(&emojis)?;
+            println!("{}", raw);
+        }
+        ListFormat::Yaml => {
+            if inline {
+                return Err(anyhow!("--inline is only supported with --format text"));
+            }
+            let raw = serde_yaml::to_string(&emojis)?;
+            println!("{}", raw);
+        }
     }
     Ok(())
 }
@@ -122,10 +148,7 @@ fn detect_inline_protocol() -> Option<InlineProtocol> {
     None
 }
 
-fn print_inline_emojis(
-    emojis: &[crate::api::CustomEmoji],
-    protocol: InlineProtocol,
-) -> Result<()> {
+fn print_inline_emojis(emojis: &[crate::api::CustomEmoji], protocol: InlineProtocol) -> Result<()> {
     let client = reqwest::blocking::Client::new();
     for emoji in emojis {
         let image = client.get(&emoji.url).send();

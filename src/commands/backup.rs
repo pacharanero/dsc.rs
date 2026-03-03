@@ -1,7 +1,7 @@
+use crate::api::DiscourseClient;
 use crate::cli::OutputFormat;
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
-use crate::api::DiscourseClient;
 use anyhow::Result;
 use std::io;
 
@@ -13,7 +13,12 @@ pub fn backup_create(config: &Config, discourse_name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn backup_list(config: &Config, discourse_name: &str, format: OutputFormat) -> Result<()> {
+pub fn backup_list(
+    config: &Config,
+    discourse_name: &str,
+    format: OutputFormat,
+    verbose: bool,
+) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
@@ -40,7 +45,11 @@ pub fn backup_list(config: &Config, discourse_name: &str, format: OutputFormat) 
     };
 
     match format {
-        OutputFormat::Plaintext => {
+        OutputFormat::Text => {
+            if backups.is_empty() && !verbose {
+                println!("No backups found.");
+                return Ok(());
+            }
             if let Some(latest) = backups.first() {
                 let filename = backup_filename(latest);
                 let created_at = backup_created_at(latest).unwrap_or("unknown");

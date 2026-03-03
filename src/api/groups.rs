@@ -1,19 +1,20 @@
 use super::client::DiscourseClient;
-use super::models::{GroupDetail, GroupDetailResponse, GroupSummary, GroupsResponse};
-use anyhow::{anyhow, Context, Result};
+use super::error::http_error;
+use super::models::{
+    GroupDetail, GroupDetailResponse, GroupMember, GroupMembersResponse, GroupSummary,
+};
+use anyhow::{Context, Result, anyhow};
+use reqwest::StatusCode;
 use serde_json::Value;
+use std::collections::HashSet;
 
 impl DiscourseClient {
     /// Fetch all groups.
     pub fn fetch_groups(&self) -> Result<Vec<GroupSummary>> {
-        let response = self.get("/groups.json")?;
-        let status = response.status();
-        let text = response.text().context("reading groups response body")?;
-        if !status.is_success() {
-            return Err(anyhow!("groups request failed with {}: {}", status, text));
+        if let Some(groups) = self.fetch_groups_admin()? {
+            return Ok(groups);
         }
-        let body: GroupsResponse = serde_json::from_str(&text).context("parsing groups json")?;
-        Ok(body.groups)
+        self.fetch_groups_paginated("/groups.json")
     }
 
     /// Fetch group details by ID (fallbacks to name lookup if needed).
@@ -23,14 +24,34 @@ impl DiscourseClient {
         group_name: Option<&str>,
     ) -> Result<GroupDetail> {
         let id_path = format!("/groups/{}.json", group_id);
-        if let Ok(detail) = self.fetch_group_detail_by_path(&id_path) {
+        if let Some(detail) = self.fetch_group_detail_by_path(&id_path)? {
             return Ok(detail);
         }
         if let Some(name) = group_name {
             let name_path = format!("/groups/{}.json", name);
-            return self.fetch_group_detail_by_path(&name_path);
+            if let Some(detail) = self.fetch_group_detail_by_path(&name_path)? {
+                return Ok(detail);
+            }
         }
-        Err(anyhow!("group detail not found"))
+        Err(anyhow!("group not found: {}", group_id))
+    }
+
+    pub fn fetch_group_members(
+        &self,
+        group_id: u64,
+        group_name: Option<&str>,
+    ) -> Result<Vec<GroupMember>> {
+        let id_path = format!("/groups/{}/members.json", group_id);
+        if let Some(members) = self.fetch_group_members_by_path(&id_path)? {
+            return Ok(members);
+        }
+        if let Some(name) = group_name {
+            let name_path = format!("/groups/{}/members.json", name);
+            if let Some(members) = self.fetch_group_members_by_path(&name_path)? {
+                return Ok(members);
+            }
+        }
+        Err(anyhow!("group not found: {}", group_id))
     }
 
     /// Create a group with detailed settings copied from a source group.
@@ -179,7 +200,7 @@ impl DiscourseClient {
         let status = response.status();
         let text = response.text().context("reading group response body")?;
         if !status.is_success() {
-            return Err(anyhow!("create group failed with {}: {}", status, text));
+            return Err(http_error("create group request", status, &text));
         }
         let value: Value = serde_json::from_str(&text).context("parsing group response json")?;
         let id = value
@@ -197,16 +218,103 @@ impl DiscourseClient {
         Ok(id)
     }
 
-    fn fetch_group_detail_by_path(&self, path: &str) -> Result<GroupDetail> {
+    fn fetch_group_detail_by_path(&self, path: &str) -> Result<Option<GroupDetail>> {
         let response = self.get(path)?;
         let status = response.status();
         let text = response.text().context("reading group detail body")?;
         if !status.is_success() {
-            return Err(anyhow!("group detail failed with {}: {}", status, text));
+            if status == StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+            return Err(http_error("group detail request", status, &text));
         }
         let body: GroupDetailResponse =
             serde_json::from_str(&text).context("parsing group detail json")?;
-        Ok(body.group)
+        Ok(Some(body.group))
+    }
+
+    fn fetch_group_members_by_path(&self, path: &str) -> Result<Option<Vec<GroupMember>>> {
+        let response = self.get(path)?;
+        let status = response.status();
+        let text = response.text().context("reading group members body")?;
+        if !status.is_success() {
+            if status == StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+            return Err(http_error("group members request", status, &text));
+        }
+        let body: GroupMembersResponse =
+            serde_json::from_str(&text).context("parsing group members json")?;
+        Ok(Some(body.members))
+    }
+
+    fn fetch_groups_admin(&self) -> Result<Option<Vec<GroupSummary>>> {
+        let response = self.get("/admin/groups.json")?;
+        let status = response.status();
+        let text = response.text().context("reading groups response body")?;
+        if status.is_success() {
+            if text.trim().is_empty() {
+                return Ok(None);
+            }
+            let value: Value = serde_json::from_str(&text).context("parsing groups json")?;
+            return Ok(Some(extract_groups_from_value(&value)?));
+        }
+        if status == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        Err(http_error("groups request", status, &text))
+    }
+
+    fn fetch_groups_paginated(&self, path: &str) -> Result<Vec<GroupSummary>> {
+        let mut out = Vec::new();
+        let mut seen = HashSet::new();
+        let mut next_path = Some(path.to_string());
+
+        while let Some(path) = next_path.take() {
+            let path = self.normalize_groups_path(&path);
+            if !seen.insert(path.clone()) {
+                return Err(anyhow!("groups request loop detected at {}", path));
+            }
+            let response = self.get(&path)?;
+            let status = response.status();
+            let text = response.text().context("reading groups response body")?;
+            if !status.is_success() {
+                return Err(http_error("groups request", status, &text));
+            }
+            if text.trim().is_empty() {
+                return Err(anyhow!(
+                    "groups request failed with {} (empty response)",
+                    status
+                ));
+            }
+            let value: Value = serde_json::from_str(&text).context("parsing groups json")?;
+            let page_groups = extract_groups_from_value(&value)?;
+            if page_groups.is_empty() {
+                break;
+            }
+            out.extend(page_groups);
+            next_path = extract_next_groups_path(&value);
+        }
+
+        Ok(out)
+    }
+
+    fn normalize_groups_path(&self, path: &str) -> String {
+        let mut path = path.to_string();
+        if let Some(stripped) = path.strip_prefix(self.baseurl()) {
+            path = stripped.to_string();
+        }
+        if !path.starts_with('/') {
+            path = format!("/{}", path);
+        }
+        if path.contains(".json") {
+            return path;
+        }
+        if let Some((base, query)) = path.split_once('?') {
+            format!("{}.json?{}", base, query)
+        } else {
+            format!("{}.json", path)
+        }
     }
 }
 
@@ -214,4 +322,42 @@ fn push_opt(payload: &mut Vec<(String, String)>, key: &str, value: Option<&str>)
     if let Some(value) = value {
         payload.push((key.to_string(), value.to_string()));
     }
+}
+
+fn extract_groups_from_value(value: &Value) -> Result<Vec<GroupSummary>> {
+    let groups = if let Some(arr) = value.as_array() {
+        arr
+    } else {
+        value
+            .get("groups")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow!("groups response missing groups array"))?
+    };
+    let mut out = Vec::with_capacity(groups.len());
+    for group in groups {
+        let parsed: GroupSummary =
+            serde_json::from_value(group.clone()).context("parsing group summary")?;
+        out.push(parsed);
+    }
+    Ok(out)
+}
+
+fn extract_next_groups_path(value: &Value) -> Option<String> {
+    let direct = value
+        .get("load_more_groups")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    if direct
+        .as_deref()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return direct;
+    }
+    value
+        .get("extras")
+        .and_then(|extras| extras.get("load_more_groups"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .filter(|s| !s.trim().is_empty())
 }

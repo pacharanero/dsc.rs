@@ -4,7 +4,7 @@ dsc.rs is a very cleverly-named Discourse CLI tool written in Rust, which does m
 
 ## Features
 
-- Keeping track of Discourse installs
+- Keeping track of Discourse installs and data about them
 - Performing updates over SSH
 - Updating the Changelog automatically
 - Synchronising Categories and Topics down to local Markdown files and back again
@@ -15,7 +15,7 @@ dsc.rs is a very cleverly-named Discourse CLI tool written in Rust, which does m
 
 Global option:
 
-- `dsc --config <path> <command>` (or `-c <path>`) to select a config file (default: `dsc.toml`).
+- `dsc --config <path> <command>` (or `-c <path>`) to select a config file. Without `--config`, dsc searches common local/user/system paths and falls back to `./dsc.toml`.
 
 ### `dsc list [--format <format>] [--tags <tag1,tag2,...>]`
 
@@ -127,7 +127,7 @@ If `--dir` is provided, writes the completion script to the given directory. Oth
 
 ## Emoji
 
-I like to use custom emoji on my forums but the current interface for uploading them is quite tedious, being restricted to the same number of simultaneous uploads as you have set for Posts, and the maximum is currently 20. dsc.rs can bulk upload emoji from a local directory to a target Discourse install.
+I like to use custom emoji on my forums but the current interface for uploading them is quite tedious, being restricted to the same number of simultaneous uploads as you have set for Posts, and the maximum is currently 20. `dsc.rs` can bulk upload emoji from a local directory to a target Discourse install.
 
 Having a complete set of the Fontawesome icons used in the Discourse UI as Custom Emoji makes it far easier to explain the user interface in posts to users.
 
@@ -184,7 +184,7 @@ Flags:
 
 - `--tree` prints categories in a hierarchy, with subcategories indented under parents.
 
-### `dsc category copy <discourse> <category-id>`
+### `dsc category copy <source-discourse> <category-id-or-slug> [--target <target-discourse>]`
 
 Copies the specified category on the specified Discourse.
 
@@ -194,15 +194,15 @@ Copy behaviour:
 - The copied category slug suffixed with `-copy` (e.g., `staff` -> `staff-copy`).
 - All other category fields should match the source category, except the ID which is assigned automatically by Discourse.
 
-`<category-id>` can be found using `dsc category list <discourse>`.
+`<category-id-or-slug>` can be found using `dsc category list <discourse>`.
 
-### `dsc category pull <discourse> <category-id> [<local-path>]`
+### `dsc category pull <discourse> <category-id-or-slug> [<local-path>]`
 
 Pulls the specified category into a directory of Markdown files.
 
 If `<local-path>` is omitted, the category is written to a new folder in the current directory (named from the category slug/name). If the path does not exist, it will be created. Files will be named from the topic titles.
 
-### `dsc category push <discourse> <local-path> <category-id>`
+### `dsc category push <discourse> <local-path> <category-id-or-slug>`
 
 Pushes the specified local Markdown files up to the specified category in the Discourse install, creating or updating topics as necessary.
 
@@ -264,13 +264,17 @@ Supports `{name}` and `{url}` placeholders in the template.
 
 ## Groups
 
-### `dsc group list <discourse>`
+### `dsc group list <discourse> [--format json|yaml|txt]`
 
 Lists all groups in the specified Discourse install, with their IDs, names, and full names.
 
 List formats are the same as `dsc list`.
 
 ### `dsc group info <discourse> <group-id> [--format json|yaml]`
+
+### `dsc group members <discourse> <group-id> [--format text|json|yaml]`
+
+Lists the members of the specified group in the specified Discourse install.
 
 ### `dsc group copy <source-discourse> <group-id> [--target <target-discourse>]`
 
@@ -310,9 +314,15 @@ NOTES: where are these stored locally?
 
 ## Site Settings
 
-### `dsc setting set <setting> <value> [--tags <tag1,tag2>]`
+### `dsc setting get <discourse> <setting> [--format json|yaml|txt]`
 
-Updates a site setting across all configured Discourses, optionally filtered by tags (matches any tag, case-insensitive).
+Gets the value of a site setting on the specified Discourse install.
+
+
+### `dsc setting set <discourse> <setting> <value>`
+
+Updates a site setting on the specified Discourse install.
+
 Requires an admin API key and username for each target Discourse.
 
 ---

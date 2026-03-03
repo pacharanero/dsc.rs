@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn deserialize_opt_string_empty_as_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
@@ -120,5 +120,79 @@ fn warn_on_discourse_names(config: &Config) {
                 discourse.name
             );
         }
+    }
+}
+
+/// Resolve the default config path when `--config` is not provided.
+///
+/// Search order:
+/// 1. `./dsc.toml`
+/// 2. `$XDG_CONFIG_HOME/dsc/dsc.toml` (or `~/.config/dsc/dsc.toml`)
+/// 3. System config locations (`$XDG_CONFIG_DIRS` + common Unix paths)
+///
+/// If none exist, defaults to `./dsc.toml`.
+pub fn resolve_default_config_path() -> PathBuf {
+    let local = PathBuf::from("dsc.toml");
+    let mut candidates = vec![local.clone()];
+
+    if let Some(xdg_config_home) = std::env::var_os("XDG_CONFIG_HOME") {
+        candidates.push(PathBuf::from(xdg_config_home).join("dsc").join("dsc.toml"));
+    } else if let Some(home) = std::env::var_os("HOME") {
+        candidates.push(
+            PathBuf::from(home)
+                .join(".config")
+                .join("dsc")
+                .join("dsc.toml"),
+        );
+    }
+
+    #[cfg(unix)]
+    {
+        if let Some(xdg_config_dirs) = std::env::var_os("XDG_CONFIG_DIRS") {
+            for dir in std::env::split_paths(&xdg_config_dirs) {
+                candidates.push(dir.join("dsc").join("dsc.toml"));
+            }
+        } else {
+            candidates.push(PathBuf::from("/etc/xdg/dsc/dsc.toml"));
+        }
+        candidates.push(PathBuf::from("/etc/dsc/dsc.toml"));
+        candidates.push(PathBuf::from("/etc/dsc.toml"));
+        candidates.push(PathBuf::from("/usr/local/etc/dsc.toml"));
+    }
+
+    first_existing_config_path(candidates).unwrap_or(local)
+}
+
+fn first_existing_config_path<I>(candidates: I) -> Option<PathBuf>
+where
+    I: IntoIterator<Item = PathBuf>,
+{
+    candidates.into_iter().find(|candidate| candidate.exists())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::first_existing_config_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn returns_first_existing_path_in_order() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let first = dir.path().join("first.toml");
+        let second = dir.path().join("second.toml");
+        std::fs::write(&second, "").expect("write");
+        std::fs::write(&first, "").expect("write");
+
+        let selected = first_existing_config_path(vec![first.clone(), second]).expect("selected");
+        assert_eq!(selected, first);
+    }
+
+    #[test]
+    fn returns_none_when_no_candidates_exist() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("missing.toml");
+        let selected =
+            first_existing_config_path(vec![missing, PathBuf::from("/definitely/missing")]);
+        assert!(selected.is_none());
     }
 }

@@ -1,5 +1,5 @@
-use dsc::config::DiscourseConfig;
 use dsc::api::DiscourseClient;
+use dsc::config::DiscourseConfig;
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};

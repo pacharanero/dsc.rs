@@ -1,6 +1,7 @@
 use super::client::DiscourseClient;
+use super::error::http_error;
 use super::models::{CreatePostResponse, TopicResponse};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
 
 impl DiscourseClient {
@@ -13,11 +14,10 @@ impl DiscourseClient {
         };
         let response = self.get(&path)?;
         let status = response.status();
-        if !status.is_success() {
-            let text = response.text().context("reading topic response body")?;
-            return Err(anyhow!("topic request failed with {}: {}", status, text));
-        }
         let text = response.text().context("reading topic response body")?;
+        if !status.is_success() {
+            return Err(http_error("topic request", status, &text));
+        }
         let body: TopicResponse = serde_json::from_str(&text).context("parsing topic json")?;
         Ok(body)
     }
@@ -29,7 +29,7 @@ impl DiscourseClient {
         let status = response.status();
         let text = response.text().context("reading post response body")?;
         if !status.is_success() {
-            return Err(anyhow!("post request failed with {}: {}", status, text));
+            return Err(http_error("post request", status, &text));
         }
         let value: Value = serde_json::from_str(&text).context("parsing post response")?;
         Ok(value
@@ -67,7 +67,7 @@ impl DiscourseClient {
         let status = response.status();
         let text = response.text().context("reading create response body")?;
         if !status.is_success() {
-            return Err(anyhow!("create topic failed with {}: {}", status, text));
+            return Err(http_error("create topic request", status, &text));
         }
         let body: CreatePostResponse =
             serde_json::from_str(&text).context("parsing create topic response")?;
@@ -85,7 +85,7 @@ impl DiscourseClient {
         let status = response.status();
         let text = response.text().context("reading create response body")?;
         if !status.is_success() {
-            return Err(anyhow!("create post failed with {}: {}", status, text));
+            return Err(http_error("create post request", status, &text));
         }
         let body: CreatePostResponse =
             serde_json::from_str(&text).context("parsing create post response")?;

@@ -61,6 +61,36 @@ fn group_info() {
 }
 
 #[test]
+fn group_members() {
+    let Some(test) = test_discourse() else {
+        return;
+    };
+    let Some(group_id) = test.test_group_id else {
+        return;
+    };
+    let Some(topic_id) = test.test_topic_id else {
+        return;
+    };
+    let marker = Uuid::new_v4().to_string();
+    vprintln("e2e_group_members: post marker, then fetch group members");
+    post_and_verify(&test, topic_id, &marker);
+
+    let dir = TempDir::new().expect("tempdir");
+    let config_path = write_temp_config(
+        &dir,
+        &format!(
+            "[[discourse]]\nname = \"{}\"\nbaseurl = \"{}\"\napikey = \"{}\"\napi_username = \"{}\"\n",
+            test.name, test.baseurl, test.apikey, test.api_username
+        ),
+    );
+    let output = run_dsc(
+        &["group", "members", &test.name, &group_id.to_string()],
+        &config_path,
+    );
+    assert!(output.status.success(), "group members failed");
+}
+
+#[test]
 fn group_copy() {
     let Some((source, target)) = test_discourse_pair() else {
         return;

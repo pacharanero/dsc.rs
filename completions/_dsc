@@ -2,28 +2,28 @@
 
 autoload -U is-at-least
 
-zstyle ':completion:*:dsc:*' sort false
-
 _dsc_discourse_names() {
-    local config_path
-    local i
-    for i in {1..$#words}; do
-        if [[ ${words[$i]} == -c || ${words[$i]} == --config ]]; then
-            config_path=${words[$((i+1))]}
-        elif [[ ${words[$i]} == --config=* ]]; then
-            config_path=${words[$i]#--config=}
-        fi
-    done
+local config_path
+local i
+for i in {1..$#words}; do
+if [[ ${words[$i]} == -c || ${words[$i]} == --config ]]; then
+config_path=${words[$((i+1))]}
+elif [[ ${words[$i]} == --config=* ]]; then
+config_path=${words[$i]#--config=}
+fi
+done
 
-    local cmd=(dsc list --format plaintext)
-    if [[ -n ${config_path:-} ]]; then
-        cmd+=(-c "$config_path")
-    fi
+local cmd=(dsc list --format plaintext)
+if [[ -n ${config_path:-} ]]; then
+cmd+=(-c "$config_path")
+fi
 
-    local -a names
-    names=(${(f)"$(command ${cmd[@]} 2>/dev/null | sed 's/ - .*//')"})
-    _describe -t discourses 'discourses' names
+local -a names
+names=(${(f)"$(command ${cmd[@]} 2>/dev/null | sed 's/ - .*//')"})
+_describe -t discourses 'discourses' names
 }
+
+zstyle ':completion:*:dsc:*' sort false
 
 _dsc() {
     typeset -A opt_args
@@ -53,9 +53,11 @@ _dsc() {
         case $line[1] in
             (list)
 _arguments "${_arguments_options[@]}" : \
-'-f+[]:FORMAT:(plaintext markdown markdown-table json yaml csv)' \
-'--format=[]:FORMAT:(plaintext markdown markdown-table json yaml csv)' \
+'-f+[]:FORMAT:(text markdown markdown-table json yaml csv)' \
+'--format=[]:FORMAT:(text markdown markdown-table json yaml csv)' \
 '--tags=[]:tag1,tag2:_default' \
+'-v[]' \
+'--verbose[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_dsc__list_commands" \
@@ -104,9 +106,11 @@ esac
 ;;
 (ls)
 _arguments "${_arguments_options[@]}" : \
-'-f+[]:FORMAT:(plaintext markdown markdown-table json yaml csv)' \
-'--format=[]:FORMAT:(plaintext markdown markdown-table json yaml csv)' \
+'-f+[]:FORMAT:(text markdown markdown-table json yaml csv)' \
+'--format=[]:FORMAT:(text markdown markdown-table json yaml csv)' \
 '--tags=[]:tag1,tag2:_default' \
+'-v[]' \
+'--verbose[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_dsc__list_commands" \
@@ -173,9 +177,9 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-m+[]:MAX:_default' \
 '--max=[]:MAX:_default' \
-'-C[]' \
-'--concurrent[]' \
 '-p[]' \
+'--parallel[]' \
+'-g[]' \
 '--post-changelog[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -207,6 +211,10 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (list)
 _arguments "${_arguments_options[@]}" : \
+'-f+[]:FORMAT:(text json yaml)' \
+'--format=[]:FORMAT:(text json yaml)' \
+'-v[]' \
+'--verbose[]' \
 '-i[]' \
 '--inline[]' \
 '-h[Print help]' \
@@ -341,6 +349,10 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (list)
 _arguments "${_arguments_options[@]}" : \
+'-f+[]:FORMAT:(text json yaml)' \
+'--format=[]:FORMAT:(text json yaml)' \
+'-v[]' \
+'--verbose[]' \
 '--tree[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -349,6 +361,8 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (copy)
 _arguments "${_arguments_options[@]}" : \
+'-t+[]:TARGET:_default' \
+'--target=[]:TARGET:_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':discourse:_default' \
@@ -429,12 +443,26 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (list)
 _arguments "${_arguments_options[@]}" : \
+'-f+[]:FORMAT:(text json yaml)' \
+'--format=[]:FORMAT:(text json yaml)' \
+'-v[]' \
+'--verbose[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':discourse:_default' \
 && ret=0
 ;;
 (info)
+_arguments "${_arguments_options[@]}" : \
+'-f+[]:FORMAT:(json yaml)' \
+'--format=[]:FORMAT:(json yaml)' \
+'-h[Print help]' \
+'--help[Print help]' \
+':discourse:_default' \
+':group:_default' \
+&& ret=0
+;;
+(members)
 _arguments "${_arguments_options[@]}" : \
 '-f+[]:FORMAT:(json yaml)' \
 '--format=[]:FORMAT:(json yaml)' \
@@ -471,6 +499,10 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (info)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(members)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -513,8 +545,10 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (list)
 _arguments "${_arguments_options[@]}" : \
-'-f+[]:FORMAT:(plaintext markdown markdown-table json yaml csv)' \
-'--format=[]:FORMAT:(plaintext markdown markdown-table json yaml csv)' \
+'-f+[]:FORMAT:(text markdown markdown-table json yaml csv)' \
+'--format=[]:FORMAT:(text markdown markdown-table json yaml csv)' \
+'-v[]' \
+'--verbose[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':discourse:_default' \
@@ -580,6 +614,10 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (list)
 _arguments "${_arguments_options[@]}" : \
+'-f+[]:FORMAT:(text json yaml)' \
+'--format=[]:FORMAT:(text json yaml)' \
+'-v[]' \
+'--verbose[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':discourse:_default' \
@@ -655,6 +693,10 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (list)
 _arguments "${_arguments_options[@]}" : \
+'-f+[]:FORMAT:(text json yaml)' \
+'--format=[]:FORMAT:(text json yaml)' \
+'-v[]' \
+'--verbose[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':discourse:_default' \
@@ -728,6 +770,10 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (list)
 _arguments "${_arguments_options[@]}" : \
+'-f+[]:FORMAT:(text json yaml)' \
+'--format=[]:FORMAT:(text json yaml)' \
+'-v[]' \
+'--verbose[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':discourse:_default' \
@@ -990,6 +1036,10 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (info)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(members)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -1352,6 +1402,7 @@ _dsc__group_commands() {
     local commands; commands=(
 'list:' \
 'info:' \
+'members:' \
 'copy:' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
@@ -1367,6 +1418,7 @@ _dsc__group__help_commands() {
     local commands; commands=(
 'list:' \
 'info:' \
+'members:' \
 'copy:' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
@@ -1392,6 +1444,11 @@ _dsc__group__help__list_commands() {
     local commands; commands=()
     _describe -t commands 'dsc group help list commands' commands "$@"
 }
+(( $+functions[_dsc__group__help__members_commands] )) ||
+_dsc__group__help__members_commands() {
+    local commands; commands=()
+    _describe -t commands 'dsc group help members commands' commands "$@"
+}
 (( $+functions[_dsc__group__info_commands] )) ||
 _dsc__group__info_commands() {
     local commands; commands=()
@@ -1401,6 +1458,11 @@ _dsc__group__info_commands() {
 _dsc__group__list_commands() {
     local commands; commands=()
     _describe -t commands 'dsc group list commands' commands "$@"
+}
+(( $+functions[_dsc__group__members_commands] )) ||
+_dsc__group__members_commands() {
+    local commands; commands=()
+    _describe -t commands 'dsc group members commands' commands "$@"
 }
 (( $+functions[_dsc__help_commands] )) ||
 _dsc__help_commands() {
@@ -1510,6 +1572,7 @@ _dsc__help__group_commands() {
     local commands; commands=(
 'list:' \
 'info:' \
+'members:' \
 'copy:' \
     )
     _describe -t commands 'dsc help group commands' commands "$@"
@@ -1528,6 +1591,11 @@ _dsc__help__group__info_commands() {
 _dsc__help__group__list_commands() {
     local commands; commands=()
     _describe -t commands 'dsc help group list commands' commands "$@"
+}
+(( $+functions[_dsc__help__group__members_commands] )) ||
+_dsc__help__group__members_commands() {
+    local commands; commands=()
+    _describe -t commands 'dsc help group members commands' commands "$@"
 }
 (( $+functions[_dsc__help__help_commands] )) ||
 _dsc__help__help_commands() {

@@ -1,8 +1,9 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
 use super::client::DiscourseClient;
+use super::error::http_error;
 
 impl DiscourseClient {
     /// List color schemes (palettes) available on the Discourse instance.
@@ -13,11 +14,7 @@ impl DiscourseClient {
             .text()
             .context("reading color schemes response body")?;
         if !status.is_success() {
-            return Err(anyhow!(
-                "color schemes request failed with {}: {}",
-                status,
-                text
-            ));
+            return Err(http_error("color schemes request", status, &text));
         }
         let value: Value = serde_json::from_str(&text).context("parsing color schemes response")?;
         Ok(value)
@@ -31,11 +28,7 @@ impl DiscourseClient {
             .text()
             .context("reading color scheme response body")?;
         if !status.is_success() {
-            return Err(anyhow!(
-                "color scheme request failed with {}: {}",
-                status,
-                text
-            ));
+            return Err(http_error("color scheme request", status, &text));
         }
         let value: Value = serde_json::from_str(&text).context("parsing color scheme response")?;
         Ok(value)
@@ -60,11 +53,7 @@ impl DiscourseClient {
         let status = response.status();
         let text = response.text().context("reading color scheme response")?;
         if !status.is_success() {
-            return Err(anyhow!(
-                "create color scheme failed with {}: {}",
-                status,
-                text
-            ));
+            return Err(http_error("create color scheme request", status, &text));
         }
         let value: Value =
             serde_json::from_str(&text).context("parsing create color scheme response")?;
@@ -101,11 +90,7 @@ impl DiscourseClient {
         let status = response.status();
         let text = response.text().context("reading color scheme response")?;
         if !status.is_success() {
-            return Err(anyhow!(
-                "update color scheme failed with {}: {}",
-                status,
-                text
-            ));
+            return Err(http_error("update color scheme request", status, &text));
         }
         Ok(())
     }

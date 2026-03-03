@@ -1,7 +1,7 @@
 use super::models::{AboutResponse, SiteResponse};
 use crate::config::DiscourseConfig;
 use crate::utils::normalize_baseurl;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{HeaderMap, HeaderValue};
 
@@ -23,7 +23,10 @@ impl DiscourseClient {
     pub fn new(config: &DiscourseConfig) -> Result<Self> {
         let baseurl = normalize_baseurl(&config.baseurl);
         if baseurl.is_empty() {
-            return Err(anyhow!("baseurl is required"));
+            return Err(anyhow!(
+                "missing baseurl for discourse {}; set baseurl in dsc.toml",
+                config.name
+            ));
         }
 
         let mut headers = HeaderMap::new();
@@ -177,11 +180,7 @@ fn extract_html_title(html: &str) -> Option<String> {
     let title = String::from_utf8_lossy(&haystack[start..end])
         .trim()
         .to_string();
-    if title.is_empty() {
-        None
-    } else {
-        Some(title)
-    }
+    if title.is_empty() { None } else { Some(title) }
 }
 
 fn extract_meta_content(html: &str, name: &str) -> Option<String> {
@@ -217,11 +216,7 @@ fn extract_attr_value(tag: &str, attr: &str) -> Option<String> {
         return None;
     }
     let value: String = chars.take_while(|c| *c != quote).collect();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_empty() { None } else { Some(value) }
 }
 
 fn parse_generator_content(content: &str) -> (Option<String>, Option<String>) {

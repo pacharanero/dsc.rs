@@ -1,7 +1,7 @@
-use crate::commands::common::ensure_api_credentials;
-use crate::config::{find_discourse, Config, DiscourseConfig};
 use crate::api::{DiscourseClient, VersionInfo};
-use anyhow::{anyhow, Context, Result};
+use crate::commands::common::ensure_api_credentials;
+use crate::config::{Config, DiscourseConfig, find_discourse};
+use anyhow::{Context, Result, anyhow};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::VecDeque;
 use std::io::{self, Write};
@@ -12,7 +12,8 @@ use std::thread;
 use std::time::Duration;
 
 pub fn update_one(config: &Config, name: &str, post_changelog: bool) -> Result<()> {
-    let discourse = find_discourse(config, name).ok_or_else(|| anyhow!("unknown discourse"))?;
+    let discourse =
+        find_discourse(config, name).ok_or_else(|| anyhow!("discourse not found: {}", name))?;
     let metadata = run_update(discourse)?;
     let payload = print_update_summary(discourse, &metadata);
     if post_changelog {
@@ -23,16 +24,16 @@ pub fn update_one(config: &Config, name: &str, post_changelog: bool) -> Result<(
 
 pub fn update_all(
     config: &Config,
-    concurrent: bool,
+    parallel: bool,
     max: Option<usize>,
     post_changelog: bool,
 ) -> Result<()> {
-    if concurrent {
+    if parallel {
         return Err(anyhow!(
-            "--concurrent is disabled for 'dsc update all' because it stops on first failure"
+            "--parallel is disabled for 'dsc update all' because it stops on first failure"
         ));
     }
-    if !concurrent {
+    if !parallel {
         for discourse in &config.discourse {
             let metadata = run_update(discourse)?;
             let payload = print_update_summary(discourse, &metadata);
@@ -117,10 +118,7 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
     let before_os_version = match get_os_version(&target) {
         Ok(version) => {
             let label = version.as_deref().unwrap_or("unknown");
-            stage(
-                &target,
-                &format!("OS: {}", label),
-            );
+            stage(&target, &format!("OS: {}", label));
             version
         }
         Err(err) => {
@@ -134,6 +132,23 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
             None
         }
     };
+
+    stage(&target, "Checking root disk free space");
+    let min_free_gb = std::env::var("DSC_DISCOURSE_MIN_FREE_GB")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|gb| *gb > 0)
+        .unwrap_or(5);
+    if let Some(available_gb) = get_root_disk_available_gb(&target)? {
+        if available_gb < min_free_gb {
+            return Err(anyhow!(
+                "insufficient disk space on {}: {}G free (minimum {}G). Please run an interactive update via SSH to clean up space, then retry.",
+                target,
+                available_gb,
+                min_free_gb
+            ));
+        }
+    }
 
     let os_update_cmd = std::env::var("DSC_SSH_OS_UPDATE_CMD").unwrap_or_else(|_| {
         "sudo -n DEBIAN_FRONTEND=noninteractive apt update && sudo -n DEBIAN_FRONTEND=noninteractive apt upgrade -y"
@@ -149,12 +164,8 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
     let mut server_rebooted = false;
 
     stage(&target, "Running OS update");
-    if let Err(err) = run_ssh_command_with_tail(
-        &target,
-        &os_update_cmd,
-        "OS update in progress",
-        3,
-    ) {
+    if let Err(err) = run_ssh_command_with_tail(&target, &os_update_cmd, "OS update in progress", 3)
+    {
         if let Some(rollback_cmd) = os_update_rollback_cmd() {
             stage(&target, "Running OS update rollback");
             if let Err(rollback_err) = run_ssh_command(&target, &rollback_cmd) {
@@ -215,7 +226,7 @@ fn run_update(discourse: &DiscourseConfig) -> Result<UpdateMetadata> {
     std::thread::sleep(std::time::Duration::from_secs(wait_secs));
     stage(&target, "Fetching Discourse version (after update)");
     let mut after_version_error = None;
-    let after_info = match fetch_version_info_with_retry(&client, 3) {
+    let after_info = match fetch_version_info_with_retry(&client, 6) {
         Ok(info) => {
             let label = info.version.as_deref().unwrap_or("unknown");
             stage(
@@ -317,9 +328,8 @@ fn run_ssh_command_with_tail(
     tail_lines: usize,
 ) -> Result<String> {
     let pb = ProgressBar::new_spinner();
-    let style =
-        ProgressStyle::with_template("{spinner} {msg}")
-            .unwrap_or_else(|_| ProgressStyle::default_spinner());
+    let style = ProgressStyle::with_template("{spinner} {msg}")
+        .unwrap_or_else(|_| ProgressStyle::default_spinner());
     pb.set_style(style);
     pb.enable_steady_tick(Duration::from_millis(120));
 
@@ -410,11 +420,7 @@ fn run_ssh_command_with_tail(
     pb.finish_and_clear();
 
     if !status.success() {
-        return Err(anyhow!(
-            "ssh command failed for {}: {}",
-            target,
-            stderr_buf
-        ));
+        return Err(anyhow!("ssh command failed for {}: {}", target, stderr_buf));
     }
 
     Ok(stdout_buf)
@@ -500,9 +506,20 @@ fn get_os_version(target: &str) -> Result<Option<String>> {
 }
 
 fn parse_reclaimed_space(output: &str) -> Option<String> {
-    output
+    let cleaned = strip_ansi_codes(output);
+    cleaned
         .lines()
-        .find_map(|line| line.split("Total reclaimed space:").nth(1))
+        .find_map(|line| {
+            let lower = line.to_ascii_lowercase();
+            if let Some(idx) = lower.find("total reclaimed space:") {
+                let (_, rest) = line.split_at(idx);
+                return rest
+                    .splitn(2, ':')
+                    .nth(1)
+                    .map(|value| value.trim().to_string());
+            }
+            None
+        })
         .map(|value| value.trim().to_string())
 }
 
@@ -510,6 +527,17 @@ fn get_root_disk_usage(target: &str) -> Result<String> {
     let cmd = "df -h / | awk 'NR==2 {print $2 \" total, \" $3 \" used, \" $4 \" available, \" $5 \" used\"}'";
     let output = run_ssh_command(target, cmd)?;
     Ok(output.trim().to_string())
+}
+
+fn get_root_disk_available_gb(target: &str) -> Result<Option<u64>> {
+    let cmd = "df -BG / | awk 'NR==2 {print $4}'";
+    let output = run_ssh_command(target, cmd)?;
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let digits = trimmed.trim_end_matches('G');
+    Ok(digits.parse::<u64>().ok())
 }
 
 fn os_update_rollback_cmd() -> Option<String> {
@@ -526,14 +554,8 @@ fn build_changelog_payload(metadata: &UpdateMetadata) -> String {
     let before_version = metadata.before_version.as_deref().unwrap_or("unknown");
     let after_version = metadata.after_version.as_deref().unwrap_or("unknown");
     let reclaimed = metadata.reclaimed_space.as_deref().unwrap_or("unknown");
-    let os_version = metadata
-        .before_os_version
-        .as_deref()
-        .unwrap_or("unknown");
-    let root_disk = metadata
-        .root_disk_usage
-        .as_deref()
-        .unwrap_or("unknown");
+    let os_version = metadata.before_os_version.as_deref().unwrap_or("unknown");
+    let root_disk = metadata.root_disk_usage.as_deref().unwrap_or("unknown");
     let before_commit = format_commit_link(metadata.before_commit.as_deref());
     let after_commit = format_commit_link(metadata.after_commit.as_deref());
 
@@ -549,27 +571,35 @@ fn build_changelog_payload(metadata: &UpdateMetadata) -> String {
     }
 
     body.push("- [x] Updated Discourse:".to_string());
-    body.push(format!(
-        "  - Initial version: {} {}",
-        before_version, before_commit
-    ));
+    if let Some(commit) = before_commit.as_deref() {
+        body.push(format!(
+            "  - Initial version: {} {}",
+            before_version, commit
+        ));
+    } else {
+        body.push(format!("  - Initial version: {}", before_version));
+    }
     let after_error = metadata
         .after_version_error
         .as_deref()
         .map(|err| format!(" (fetch failed: {})", err))
         .unwrap_or_default();
-    body.push(format!(
-        "  - Updated version: {}{} {}",
-        after_version, after_error, after_commit
-    ));
+    if let Some(commit) = after_commit.as_deref() {
+        body.push(format!(
+            "  - Updated version: {}{} {}",
+            after_version, after_error, commit
+        ));
+    } else {
+        body.push(format!(
+            "  - Updated version: {}{}",
+            after_version, after_error
+        ));
+    }
     body.push(format!(
         "- [x] `./launcher cleanup` Total reclaimed space: {}",
         reclaimed
     ));
-    body.push(format!(
-        "- [x] Root disk usage (df -h /): {}",
-        root_disk
-    ));
+    body.push(format!("- [x] Root disk usage (df -h /): {}", root_disk));
     let test_marker = std::env::var("DSC_TEST_MARKER").ok();
     if let Some(marker) = &test_marker {
         body.push(format!("- Run-ID: {}", marker));
@@ -577,19 +607,23 @@ fn build_changelog_payload(metadata: &UpdateMetadata) -> String {
     body.join("\n")
 }
 
-fn fetch_version_info_with_retry(
-    client: &DiscourseClient,
-    attempts: usize,
-) -> Result<VersionInfo> {
+fn fetch_version_info_with_retry(client: &DiscourseClient, attempts: usize) -> Result<VersionInfo> {
     let mut last_err = None;
     let total = attempts.max(1);
     for attempt in 0..total {
         match client.fetch_version_info() {
             Ok(info) => return Ok(info),
             Err(err) => {
+                let message = err.to_string();
                 last_err = Some(err);
                 if attempt + 1 < total {
-                    std::thread::sleep(std::time::Duration::from_secs(2 * (attempt + 1) as u64));
+                    if message.contains("502") {
+                        std::thread::sleep(std::time::Duration::from_secs(10));
+                    } else {
+                        std::thread::sleep(std::time::Duration::from_secs(
+                            2 * (attempt + 1) as u64,
+                        ));
+                    }
                 }
             }
         }
@@ -597,25 +631,48 @@ fn fetch_version_info_with_retry(
     Err(last_err.unwrap_or_else(|| anyhow!("fetch version failed")))
 }
 
-fn format_commit_link(commit: Option<&str>) -> String {
+fn format_commit_link(commit: Option<&str>) -> Option<String> {
     let Some(commit) = commit else {
-        return "unknown".to_string();
+        return None;
     };
     let trimmed = commit.trim();
     if trimmed.is_empty() {
-        return "unknown".to_string();
+        return None;
     }
-    let short = trimmed.chars().take(7).collect::<String>();
-    format!(
-        "[{}](https://github.com/discourse/discourse/commit/{})",
+    let short = trimmed.chars().take(10).collect::<String>();
+    Some(format!(
+        "[{}](https://github.com/discourse/discourse/commits/{})",
         short, trimmed
-    )
+    ))
+}
+
+fn strip_ansi_codes(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            if matches!(chars.peek(), Some('[')) {
+                chars.next();
+                while let Some(next) = chars.next() {
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+                continue;
+            }
+        }
+        out.push(ch);
+    }
+    out
 }
 
 fn post_changelog_update(discourse: &DiscourseConfig, payload: &str) -> Result<u64> {
-    let topic_id = discourse
-        .changelog_topic_id
-        .ok_or_else(|| anyhow!("changelog_topic_id is required to post updates"))?;
+    let topic_id = discourse.changelog_topic_id.ok_or_else(|| {
+        anyhow!(
+            "missing changelog_topic_id for discourse {}; set changelog_topic_id in dsc.toml",
+            discourse.name
+        )
+    })?;
     let client = DiscourseClient::new(discourse)?;
     let post_id = client.create_post(topic_id, payload)?;
     if std::env::var("DSC_TEST_MARKER").is_ok() {

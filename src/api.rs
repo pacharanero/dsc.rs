@@ -2,6 +2,7 @@ mod backup;
 mod categories;
 mod client;
 mod emoji;
+mod error;
 mod groups;
 mod models;
 mod palettes;

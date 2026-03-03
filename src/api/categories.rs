@@ -1,6 +1,8 @@
 use super::client::DiscourseClient;
+use super::error::http_error;
 use super::models::{CategoriesResponse, CategoryInfo, CategoryResponse, CreateCategoryResponse};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
+use reqwest::StatusCode;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -10,10 +12,15 @@ impl DiscourseClient {
         let path = format!("/c/{}.json", category_id);
         let response = self.get(&path)?;
         let status = response.status();
-        let body: CategoryResponse = response.json().context("reading category json")?;
+        let text = response.text().context("reading category response body")?;
         if !status.is_success() {
+            if status == StatusCode::NOT_FOUND {
+                return Err(anyhow!("category not found: {}", category_id));
+            }
             return Err(anyhow!("category request failed with {}", status));
         }
+        let body: CategoryResponse =
+            serde_json::from_str(&text).context("reading category json")?;
         Ok(body)
     }
 
@@ -21,10 +28,14 @@ impl DiscourseClient {
     pub fn fetch_categories(&self) -> Result<Vec<CategoryInfo>> {
         let response = self.get("/categories.json?include_subcategories=true")?;
         let status = response.status();
-        let body: CategoriesResponse = response.json().context("reading categories json")?;
+        let text = response
+            .text()
+            .context("reading categories response body")?;
         if !status.is_success() {
             return Err(anyhow!("categories request failed with {}", status));
         }
+        let body: CategoriesResponse =
+            serde_json::from_str(&text).context("reading categories json")?;
         let mut categories = body.category_list.categories;
         if let Ok(site_categories) = self.fetch_site_categories() {
             let mut seen = HashMap::new();
@@ -62,10 +73,12 @@ impl DiscourseClient {
             .send()
             .context("creating category")?;
         let status = response.status();
-        let body: CreateCategoryResponse = response.json().context("reading category response")?;
+        let text = response.text().context("reading category response body")?;
         if !status.is_success() {
             return Err(anyhow!("create category failed with {}", status));
         }
+        let body: CreateCategoryResponse =
+            serde_json::from_str(&text).context("reading category response")?;
         Ok(body.category.id)
     }
 
@@ -74,11 +87,7 @@ impl DiscourseClient {
         let status = response.status();
         let text = response.text().context("reading site.json response body")?;
         if !status.is_success() {
-            return Err(anyhow!(
-                "site.json request failed with {}: {}",
-                status,
-                text
-            ));
+            return Err(http_error("site.json request", status, &text));
         }
         let value: Value = serde_json::from_str(&text).context("parsing site.json")?;
         let array = value

@@ -35,7 +35,13 @@ Most functionality is provided through interactions with the Discourse REST API,
 
 ## Configuration
 
-`dsc` reads configuration from `dsc.toml` in the working directory by default (override with `--config <path>`). Each Discourse instance lives under a `[[discourse]]` table. See [dsc.example.toml](dsc.example.toml) for a fuller template. Minimum useful fields are `name`, `baseurl`, `apikey`, and `api_username`.
+If `--config <path>` is not provided, `dsc` searches for a config in this order:
+
+1. `./dsc.toml`
+2. `$XDG_CONFIG_HOME/dsc/dsc.toml` (or `~/.config/dsc/dsc.toml` when `XDG_CONFIG_HOME` is unset)
+3. System config locations (`$XDG_CONFIG_DIRS` entries as `<dir>/dsc/dsc.toml`, then `/etc/xdg/dsc/dsc.toml`, `/etc/dsc/dsc.toml`, `/etc/dsc.toml`, `/usr/local/etc/dsc.toml`)
+
+If none are found, it defaults to `./dsc.toml` (created on first write command). Each Discourse instance lives under a `[[discourse]]` table. See [dsc.example.toml](dsc.example.toml) for a fuller template. Minimum useful fields are `name`, `baseurl`, `apikey`, and `api_username`.
 
 ```toml
 [[discourse]]
@@ -62,13 +68,16 @@ Notes:
 
 ## Usage
 
-General form: `dsc [--config dsc.toml] <command>`.
+General form: `dsc [--config <path>] <command>`.
 
-- List installs: `dsc list --format plaintext|markdown|markdown-table|json|yaml|csv`
+For the complete command/flag surface, use `dsc --help` and `dsc <command> --help`.
+
+- List installs: `dsc list --format text|markdown|markdown-table|json|yaml|csv`
+- Tidy/sort config entries: `dsc list tidy`
 - Add installs: `dsc add forum-a,forum-b [--interactive]`
 - Import installs from file: `dsc import path/to/urls.txt` or `dsc import path/to/forums.csv`
 - Update one install: `dsc update <name> [--post-changelog]`
-- Update all installs: `dsc update all [--post-changelog]`
+- Update all installs: `dsc update all [--parallel] [--max <n>] [--post-changelog]`
 
 Environment variables for `dsc update`:
 
@@ -88,29 +97,31 @@ Update summary notes:
 - If the version fetch fails, the summary includes the reason in-line.
   - `--post-changelog` prints the checklist and prompts before posting.
 - Add emoji: `dsc emoji add <discourse> <emoji-path> [emoji-name]`
-- List custom emoji: `dsc emoji list <discourse> [--inline]`
+- List custom emoji: `dsc emoji list <discourse> [--format text|json|yaml] [--inline]`
 - Topic pull: `dsc topic pull <discourse> <topic-id> [local-path]`
 - Topic push: `dsc topic push <discourse> <local-path> <topic-id>`
 - Topic sync (auto pull or push based on freshest copy): `dsc topic sync <discourse> <topic-id> <local-path> [--yes]`
-- Category list: `dsc category list <discourse> [--tree]`
-- Category pull: `dsc category pull <discourse> <category-id> [local-path]`
-- Category push: `dsc category push <discourse> <local-path> <category-id>`
-- Category copy: `dsc category copy <discourse> <category-id>`
-- Palette list: `dsc palette list <discourse>`
+- Category list: `dsc category list <discourse> [--format text|json|yaml] [--tree]`
+- Category pull: `dsc category pull <discourse> <category-id-or-slug> [local-path]`
+- Category push: `dsc category push <discourse> <local-path> <category-id-or-slug>`
+- Category copy: `dsc category copy <source> <category-id-or-slug> [--target <target>]`
+- Palette list: `dsc palette list <discourse> [--format text|json|yaml]`
 - Palette pull: `dsc palette pull <discourse> <palette-id> [local-path]`
 - Palette push: `dsc palette push <discourse> <local-path> [palette-id]`
-- Plugin list: `dsc plugin list <discourse>`
+- Plugin list: `dsc plugin list <discourse> [--format text|json|yaml]`
 - Plugin install: `dsc plugin install <discourse> <url>`
 - Plugin remove: `dsc plugin remove <discourse> <name>`
-- Theme list: `dsc theme list <discourse>`
+- Theme list: `dsc theme list <discourse> [--format text|json|yaml]`
 - Theme install: `dsc theme install <discourse> <url>`
 - Theme remove: `dsc theme remove <discourse> <name>`
-- Group list: `dsc group list <discourse>`
+- Group list: `dsc group list <discourse> [--format text|json|yaml]`
 - Group info: `dsc group info <discourse> <group-id> [--format json|yaml]`
+- Group members: `dsc group members <discourse> <group-id> [--format text|json|yaml]`
 - Group copy: `dsc group copy <source> <group-id> [--target <target>]`
 - Backup create: `dsc backup create <discourse>`
-- Backup list: `dsc backup list <discourse> [--format <format>]`
+- Backup list: `dsc backup list <discourse> [--format text|markdown|markdown-table|json|yaml|csv]`
 - Backup restore: `dsc backup restore <discourse> <backup-path>`
+- Set a site setting: `dsc setting set <setting> <value> [--tags alpha,beta]`
 - List filtered by tags: `dsc list --tags alpha,beta`
 
 ## Installation
@@ -170,7 +181,7 @@ Tips:
 - Most commands require the discourse name as the first argument after the subcommand.
 - `topic pull`/`category pull` write Markdown files; paths are created as needed.
 - `topic sync` compares local mtime with the remote post timestamp; pass `--yes` to skip the prompt.
-- `dsc update all` stops at the first failure; `--concurrent` is disabled for this command.
+- `dsc update all` stops at the first failure; `--parallel` is disabled for this command.
 - `all` is reserved for `dsc update all`.
 - `dsc list --tags` accepts comma or semicolon separators and matches any tag (case-insensitive).
 - `dsc backup list --format` supports the same formats as `dsc list`.

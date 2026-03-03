@@ -1,15 +1,16 @@
-use crate::config::{find_discourse, Config, DiscourseConfig};
 use crate::api::DiscourseClient;
-use anyhow::{anyhow, Result};
+use crate::config::{Config, DiscourseConfig, find_discourse};
+use anyhow::{Result, anyhow};
 
 pub fn select_discourse<'a>(
     config: &'a Config,
     discourse_name: Option<&str>,
 ) -> Result<&'a DiscourseConfig> {
     if let Some(name) = discourse_name {
-        return find_discourse(config, name).ok_or_else(|| anyhow!("unknown discourse {}", name));
+        return find_discourse(config, name)
+            .ok_or_else(|| anyhow!("discourse not found: {}", name));
     }
-    Err(anyhow!("discourse name is required"))
+    Err(anyhow!("missing discourse for command"))
 }
 
 pub fn ensure_api_credentials(discourse: &DiscourseConfig) -> Result<()> {
@@ -17,7 +18,7 @@ pub fn ensure_api_credentials(discourse: &DiscourseConfig) -> Result<()> {
     let api_username = discourse.api_username.as_deref().unwrap_or("").trim();
     if apikey.is_empty() || api_username.is_empty() {
         return Err(anyhow!(
-            "missing api credentials for {}; please set apikey and api_username in dsc.toml",
+            "missing api credentials for discourse {}; please set apikey and api_username in dsc.toml",
             discourse.name
         ));
     }
@@ -47,11 +48,7 @@ pub fn fetch_fullname_from_url(baseurl: &str) -> Option<String> {
     match client.fetch_site_title() {
         Ok(title) => {
             let title = title.trim().to_string();
-            if title.is_empty() {
-                None
-            } else {
-                Some(title)
-            }
+            if title.is_empty() { None } else { Some(title) }
         }
         Err(err) => {
             println!("Failed to query site title for {}: {}", baseurl, err);
