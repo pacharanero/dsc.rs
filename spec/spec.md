@@ -18,6 +18,67 @@ Global option:
 - `dsc --config <path> <command>` (or `-c <path>`) to select a config file. Without `--config`, dsc searches common local/user/system paths and falls back to `./dsc.toml`.
 - CLI help quality requirement: every command, subcommand, argument, and flag must include concise `--help` text.
 
+## CLI Consistency Standards
+
+This section defines the shared standards for command UX and output consistency.
+
+### Source of Truth and Docs Policy
+
+- `dsc --help` is the source of truth for complete command/flag coverage.
+- README should present common tasks near the top.
+- README should include a full command reference section further down.
+- README should include at least one `dsc update` example using `--parallel`.
+
+### Format Baseline
+
+- All `* list` commands must support `--format text|json|yaml` at minimum.
+- `text` remains the default format.
+- Commands that already support richer formats (`markdown`, `markdown-table`, `csv`, `urls`) may keep those extras.
+- Where practical, format rendering should reuse shared helpers and avoid duplicated formatter logic.
+
+### Error Message Standards
+
+- Missing discourse config entry:
+  - `discourse not found: {name}`
+- Missing remote resource:
+  - `{resource} not found: {identifier}`
+- Missing required config values:
+  - `missing {field} for {resource}; please set {field} or check your config`
+- Input validation should fail fast before API calls where possible (for example, empty identifiers).
+
+### Empty List Behavior
+
+- For `--format text`, list commands should print:
+  - `No <resource> found.`
+- For structured formats (`json|yaml`), empty collections should serialize as normal empty arrays/objects.
+
+### Success Output Policy
+
+- Mutating commands should be pipe-friendly by default.
+- Prefer machine-usable output in `text` mode (for example resource URLs/paths/IDs in stable single-line formats) over prose-only sentences.
+- Long-term direction:
+  - add shared `--quiet` and `--format json` behavior for mutating commands.
+
+### Cross-Target Semantics
+
+- Equivalent cross-instance operations should share flag semantics.
+- `category copy` and `group copy` should both support `--target`.
+
+### Flag Style
+
+- Short flags should be lowercase.
+- Use `--parallel` / `-p` for concurrency semantics.
+
+### Conflict Resolution for Review Notes
+
+- Review notes mention both:
+  - "full multi-format everywhere"
+  - and "minimum text|json|yaml for all list commands"
+- Implementation baseline is:
+  - minimum `text|json|yaml` for every list command
+  - preserve richer formats where already present
+  - expand beyond baseline incrementally when justified.
+
 ### `dsc list [--format <format>] [--tags <tag1,tag2,...>]`
 
 Lists all Discourse installs known to dsc.rs, optionally filtered by tags.

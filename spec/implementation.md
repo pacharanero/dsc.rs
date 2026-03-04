@@ -10,6 +10,15 @@
 ## Source Spec
 
 - Read and implement the CLI described in `spec/spec.md`.
+- Treat "CLI Consistency Standards" in `spec/spec.md` as normative for all new command UX/output changes.
+
+## CLI Consistency Rollout
+
+- Phase 1: Document standards and normalize shared validation/error helpers.
+- Phase 2: Ensure all `* list` commands meet minimum `text|json|yaml` and empty-list behavior.
+- Phase 3: Normalize mutating-command success output to machine-friendly defaults.
+- Phase 4: Add consistent `--quiet` / structured output options for mutating commands.
+- Phase 5: Update README command reference and examples to reflect actual CLI behavior.
 
 ## CLI + Project
 
