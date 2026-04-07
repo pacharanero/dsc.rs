@@ -324,6 +324,28 @@ Supports `{url}` and `{name}` placeholders in the template.
 Removes a theme using the SSH command template in `DSC_SSH_THEME_REMOVE_CMD`.
 Supports `{name}` and `{url}` placeholders in the template.
 
+### `dsc theme pull <discourse> <theme-id> [<local-path>]`
+
+Pulls the specified theme into a local JSON file.
+
+`<theme-id>` can be found using `dsc theme list <discourse>`.
+
+If `<local-path>` is omitted, the file is written to the current directory named from the theme name (slugified). The path to the written file is printed to stdout.
+
+### `dsc theme push <discourse> <json-path> [<theme-id>]`
+
+Pushes a local JSON theme file to a Discourse instance.
+
+- If `<theme-id>` is supplied, updates the existing theme with that ID and prints the ID.
+- If the JSON file contains an `id` field and no `<theme-id>` argument is given, updates that theme.
+- Otherwise creates a new theme and prints the new ID.
+
+### `dsc theme duplicate <discourse> <theme-id>`
+
+Duplicates the specified theme and prints the new theme ID.
+
+The copy is named `Copy of <original name>` and is not set as the default theme.
+
 ---
 
 ## Groups

@@ -98,7 +98,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: PluginCommand,
     },
-    /// List/install/remove themes.
+    /// List/install/remove/pull/push/duplicate themes.
     Theme {
         #[command(subcommand)]
         command: ThemeCommand,
@@ -396,6 +396,31 @@ pub enum ThemeCommand {
         discourse: String,
         /// Theme name.
         name: String,
+    },
+    /// Pull a theme to a local JSON file.
+    Pull {
+        /// Discourse name.
+        discourse: String,
+        /// Theme ID (from `dsc theme list`).
+        theme_id: u64,
+        /// Destination file path (auto-derived from theme name when omitted).
+        local_path: Option<PathBuf>,
+    },
+    /// Push a local JSON file to create or update a theme.
+    Push {
+        /// Discourse name.
+        discourse: String,
+        /// Local JSON file path.
+        local_path: PathBuf,
+        /// Theme ID to update (creates a new theme when omitted).
+        theme_id: Option<u64>,
+    },
+    /// Duplicate a theme and print the new theme ID.
+    Duplicate {
+        /// Discourse name.
+        discourse: String,
+        /// Theme ID to duplicate (from `dsc theme list`).
+        theme_id: u64,
     },
 }
 

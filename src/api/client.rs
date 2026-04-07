@@ -71,6 +71,11 @@ impl DiscourseClient {
         Ok(self.client.put(url))
     }
 
+    pub(crate) fn delete(&self, path: &str) -> Result<reqwest::blocking::Response> {
+        let url = format!("{}{}", self.baseurl, path);
+        self.client.delete(url).send().context("sending delete request")
+    }
+
     /// Fetch the Discourse site title.
     pub fn fetch_site_title(&self) -> Result<String> {
         let site_json_error = match self.get("/site.json") {

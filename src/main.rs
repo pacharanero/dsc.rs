@@ -229,6 +229,25 @@ fn main() -> Result<()> {
             ThemeCommand::Remove { discourse, name } => {
                 commands::theme::theme_remove(&config, &discourse, &name)
             }
+            ThemeCommand::Pull {
+                discourse,
+                theme_id,
+                local_path,
+            } => commands::theme::theme_pull(
+                &config,
+                &discourse,
+                theme_id,
+                local_path.as_deref(),
+            ),
+            ThemeCommand::Push {
+                discourse,
+                local_path,
+                theme_id,
+            } => commands::theme::theme_push(&config, &discourse, &local_path, theme_id),
+            ThemeCommand::Duplicate {
+                discourse,
+                theme_id,
+            } => commands::theme::theme_duplicate(&config, &discourse, theme_id),
         },
 
         Commands::Setting {

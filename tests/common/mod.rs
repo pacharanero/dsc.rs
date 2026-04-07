@@ -47,6 +47,7 @@ pub struct TestDiscourse {
     pub test_plugin_name: Option<String>,
     pub test_theme_url: Option<String>,
     pub test_theme_name: Option<String>,
+    pub test_theme_id: Option<u64>,
     pub backup_enabled: Option<bool>,
     pub test_backup_path: Option<String>,
 }
