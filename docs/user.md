@@ -87,14 +87,14 @@ The command is built for this workflow: keep a personal "journal" Discourse of y
 
 ```bash
 dsc user activity someforum marcus --since 7d \
-  | dsc topic new bawmedical 42 --title "Activity for $(date -u +%Y-W%V)"
+  | dsc topic new myjournalforum 42 --title "Activity for $(date -u +%Y-W%V)"
 ```
 
 **Appending to a single rolling archive topic** — one topic forever, daily reply:
 
 ```bash
 dsc user activity someforum marcus --since 24h \
-  | dsc topic reply bawmedical 1234
+  | dsc topic reply myjournalforum 1234
 ```
 
 Put either in `crontab -e` or a systemd timer and the archive maintains itself.

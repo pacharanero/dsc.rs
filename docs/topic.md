@@ -41,8 +41,8 @@ Posts a new reply at the end of the topic. Reads from `<local-path>` if given, o
 Examples:
 
 ```bash
-dsc topic reply bawmedical 1525 ./note.md
-bm-daily | dsc topic reply bawmedical 1525
+dsc topic reply myforum 1525 ./note.md
+git log --since=yesterday --oneline | dsc topic reply myforum 1525
 ```
 
 ## dsc topic new
@@ -56,6 +56,6 @@ Creates a new topic in the given category with the specified title. Reads the bo
 Examples:
 
 ```bash
-dsc topic new bawmedical 42 --title "Daily bookmarks" ./today.md
-bm-daily | dsc topic new bawmedical 42 -t "Daily bookmarks"
+dsc topic new myforum 42 --title "Release notes" ./notes.md
+df -h | dsc topic new myforum 42 -t "Disk report $(date -I)"
 ```
