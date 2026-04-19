@@ -102,32 +102,85 @@ impl DiscourseClient {
     /// Discourse accepts, like "forever"); `reason` is mandatory from the UI
     /// but Discourse accepts empty via the API.
     pub fn suspend_user(&self, user_id: u64, until: &str, reason: &str) -> Result<()> {
-        let path = format!("/admin/users/{}/suspend.json", user_id);
-        let payload = [
-            ("suspend_until", until),
-            ("reason", reason),
-        ];
-        let response = self.send_retrying(|| Ok(self.put(&path)?.form(&payload)))?;
-        let status = response.status();
-        if !status.is_success() {
-            let text = response
-                .text()
-                .unwrap_or_else(|_| "<failed to read response body>".to_string());
-            return Err(http_error("suspend user request", status, &text));
-        }
-        Ok(())
+        let payload = [("suspend_until", until), ("reason", reason)];
+        self.put_admin_user_action(user_id, "suspend", &payload, "suspend user request")
     }
 
     /// Unsuspend a user by ID.
     pub fn unsuspend_user(&self, user_id: u64) -> Result<()> {
-        let path = format!("/admin/users/{}/unsuspend.json", user_id);
-        let response = self.send_retrying(|| Ok(self.put(&path)?))?;
+        self.put_admin_user_action(user_id, "unsuspend", &[], "unsuspend user request")
+    }
+
+    /// Silence a user by ID. Optional `silenced_till` (Discourse-accepted
+    /// timestamp string) and `reason`; both default to empty.
+    pub fn silence_user(&self, user_id: u64, until: &str, reason: &str) -> Result<()> {
+        let mut payload: Vec<(&str, &str)> = Vec::new();
+        if !until.is_empty() {
+            payload.push(("silenced_till", until));
+        }
+        if !reason.is_empty() {
+            payload.push(("reason", reason));
+        }
+        self.put_admin_user_action(user_id, "silence", &payload, "silence user request")
+    }
+
+    /// Unsilence a user by ID.
+    pub fn unsilence_user(&self, user_id: u64) -> Result<()> {
+        self.put_admin_user_action(user_id, "unsilence", &[], "unsilence user request")
+    }
+
+    /// Grant admin to a user.
+    pub fn grant_admin(&self, user_id: u64) -> Result<()> {
+        self.put_admin_user_action(user_id, "grant_admin", &[], "grant admin request")
+    }
+
+    /// Revoke admin from a user.
+    pub fn revoke_admin(&self, user_id: u64) -> Result<()> {
+        self.put_admin_user_action(user_id, "revoke_admin", &[], "revoke admin request")
+    }
+
+    /// Grant moderator to a user.
+    pub fn grant_moderation(&self, user_id: u64) -> Result<()> {
+        self.put_admin_user_action(
+            user_id,
+            "grant_moderation",
+            &[],
+            "grant moderation request",
+        )
+    }
+
+    /// Revoke moderator from a user.
+    pub fn revoke_moderation(&self, user_id: u64) -> Result<()> {
+        self.put_admin_user_action(
+            user_id,
+            "revoke_moderation",
+            &[],
+            "revoke moderation request",
+        )
+    }
+
+    fn put_admin_user_action(
+        &self,
+        user_id: u64,
+        action: &str,
+        payload: &[(&str, &str)],
+        action_label: &str,
+    ) -> Result<()> {
+        let path = format!("/admin/users/{}/{}.json", user_id, action);
+        let response = self.send_retrying(|| {
+            let rb = self.put(&path)?;
+            Ok(if payload.is_empty() {
+                rb
+            } else {
+                rb.form(payload)
+            })
+        })?;
         let status = response.status();
         if !status.is_success() {
             let text = response
                 .text()
                 .unwrap_or_else(|_| "<failed to read response body>".to_string());
-            return Err(http_error("unsuspend user request", status, &text));
+            return Err(http_error(action_label, status, &text));
         }
         Ok(())
     }

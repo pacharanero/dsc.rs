@@ -102,3 +102,79 @@ pub fn open_url(url: &str) -> Result<()> {
         Err(anyhow!("browser opener exited with status {}", status))
     }
 }
+
+/// Parse one-email-per-line input. Ignores blank lines, `#` comments
+/// (full-line and inline), and leading/trailing whitespace. De-duplicates
+/// while preserving the first-seen order, lowercasing as it goes.
+pub fn parse_emails(input: &str) -> Vec<String> {
+    use std::collections::BTreeSet;
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for line in input.lines() {
+        let stripped = match line.find('#') {
+            Some(idx) => &line[..idx],
+            None => line,
+        };
+        let trimmed = stripped.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !trimmed.contains('@') {
+            continue;
+        }
+        let lower = trimmed.to_ascii_lowercase();
+        if seen.insert(lower.clone()) {
+            out.push(lower);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_emails;
+
+    #[test]
+    fn parses_one_per_line() {
+        let got = parse_emails("alice@example.com\nbob@example.com\n");
+        assert_eq!(got, vec!["alice@example.com", "bob@example.com"]);
+    }
+
+    #[test]
+    fn skips_blanks_and_comments() {
+        let got = parse_emails(
+            "\
+# onboarding list
+alice@example.com
+
+# new hires below
+bob@example.com # bob in marketing
+",
+        );
+        assert_eq!(got, vec!["alice@example.com", "bob@example.com"]);
+    }
+
+    #[test]
+    fn dedupes_preserving_first_seen_order() {
+        let got = parse_emails("alice@example.com\nbob@example.com\nALICE@example.com");
+        assert_eq!(got, vec!["alice@example.com", "bob@example.com"]);
+    }
+
+    #[test]
+    fn rejects_lines_without_at() {
+        let got = parse_emails("not_an_email\nalice@example.com");
+        assert_eq!(got, vec!["alice@example.com"]);
+    }
+
+    #[test]
+    fn lowercases_emails() {
+        let got = parse_emails("Alice@Example.com");
+        assert_eq!(got, vec!["alice@example.com"]);
+    }
+
+    #[test]
+    fn handles_crlf_line_endings() {
+        let got = parse_emails("alice@example.com\r\nbob@example.com\r\n");
+        assert_eq!(got, vec!["alice@example.com", "bob@example.com"]);
+    }
+}

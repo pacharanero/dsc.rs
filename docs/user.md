@@ -39,6 +39,38 @@ dsc user unsuspend <discourse> <username>
 
 Lifts an existing suspension. Honours `--dry-run`.
 
+## dsc user silence
+
+```text
+dsc user silence <discourse> <username> [--until <ts>] [--reason <text>]
+```
+
+Silences a user (prevents posting; less prominent than suspend — the user can still log in and read). `--until` is an ISO-8601 timestamp; omit for indefinite. Honours `--dry-run`.
+
+## dsc user unsilence
+
+```text
+dsc user unsilence <discourse> <username>
+```
+
+Lifts an existing silence. Honours `--dry-run`.
+
+## dsc user promote
+
+```text
+dsc user promote <discourse> <username> --role admin|moderator
+```
+
+Grants the role to the user. Use `--role admin` to make them an admin, `--role moderator` for a moderator. Honours `--dry-run`.
+
+## dsc user demote
+
+```text
+dsc user demote <discourse> <username> --role admin|moderator
+```
+
+Revokes the role from the user. Honours `--dry-run`.
+
 ## dsc user groups list
 
 ```text

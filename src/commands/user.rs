@@ -173,6 +173,139 @@ pub fn user_unsuspend(
     Ok(())
 }
 
+pub fn user_silence(
+    config: &Config,
+    discourse_name: &str,
+    username: &str,
+    until: &str,
+    reason: &str,
+    dry_run: bool,
+) -> Result<()> {
+    let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
+    let client = DiscourseClient::new(discourse)?;
+
+    if dry_run {
+        println!(
+            "[dry-run] {}: would silence {}{}{}",
+            discourse.name,
+            username,
+            if until.is_empty() {
+                String::new()
+            } else {
+                format!(" until {}", until)
+            },
+            if reason.is_empty() {
+                String::new()
+            } else {
+                format!(" (reason: {})", reason)
+            },
+        );
+        return Ok(());
+    }
+
+    let detail = client.fetch_user_detail(username)?;
+    client.silence_user(detail.id, until, reason)?;
+    println!("Silenced {} (id:{})", detail.username, detail.id);
+    Ok(())
+}
+
+pub fn user_unsilence(
+    config: &Config,
+    discourse_name: &str,
+    username: &str,
+    dry_run: bool,
+) -> Result<()> {
+    let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
+    let client = DiscourseClient::new(discourse)?;
+
+    if dry_run {
+        println!("[dry-run] {}: would unsilence {}", discourse.name, username);
+        return Ok(());
+    }
+
+    let detail = client.fetch_user_detail(username)?;
+    client.unsilence_user(detail.id)?;
+    println!("Unsilenced {} (id:{})", detail.username, detail.id);
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+pub enum Role {
+    Admin,
+    Moderator,
+}
+
+pub fn user_promote(
+    config: &Config,
+    discourse_name: &str,
+    username: &str,
+    role: Role,
+    dry_run: bool,
+) -> Result<()> {
+    let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
+    let client = DiscourseClient::new(discourse)?;
+
+    let role_label = match role {
+        Role::Admin => "admin",
+        Role::Moderator => "moderator",
+    };
+
+    if dry_run {
+        println!(
+            "[dry-run] {}: would grant {} to {}",
+            discourse.name, role_label, username
+        );
+        return Ok(());
+    }
+
+    let detail = client.fetch_user_detail(username)?;
+    match role {
+        Role::Admin => client.grant_admin(detail.id)?,
+        Role::Moderator => client.grant_moderation(detail.id)?,
+    }
+    println!("Granted {} to {} (id:{})", role_label, detail.username, detail.id);
+    Ok(())
+}
+
+pub fn user_demote(
+    config: &Config,
+    discourse_name: &str,
+    username: &str,
+    role: Role,
+    dry_run: bool,
+) -> Result<()> {
+    let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
+    let client = DiscourseClient::new(discourse)?;
+
+    let role_label = match role {
+        Role::Admin => "admin",
+        Role::Moderator => "moderator",
+    };
+
+    if dry_run {
+        println!(
+            "[dry-run] {}: would revoke {} from {}",
+            discourse.name, role_label, username
+        );
+        return Ok(());
+    }
+
+    let detail = client.fetch_user_detail(username)?;
+    match role {
+        Role::Admin => client.revoke_admin(detail.id)?,
+        Role::Moderator => client.revoke_moderation(detail.id)?,
+    }
+    println!(
+        "Revoked {} from {} (id:{})",
+        role_label, detail.username, detail.id
+    );
+    Ok(())
+}
+
 pub fn user_groups_list(
     config: &Config,
     discourse_name: &str,

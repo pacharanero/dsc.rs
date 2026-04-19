@@ -7,6 +7,7 @@ pub mod config;
 pub mod emoji;
 pub mod group;
 pub mod import;
+pub mod invite;
 pub mod list;
 pub mod open;
 pub mod search;

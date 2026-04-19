@@ -2,7 +2,15 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use dsc::cli::*;
 use dsc::commands;
+use dsc::commands::user::Role;
 use dsc::config::{load_config, resolve_default_config_path, save_config};
+
+fn map_role(role: RoleArg) -> Role {
+    match role {
+        RoleArg::Admin => Role::Admin,
+        RoleArg::Moderator => Role::Moderator,
+    }
+}
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -211,6 +219,39 @@ fn main() -> Result<()> {
             ),
         },
 
+        Commands::Invite { command } => match command {
+            InviteCommand::Send {
+                discourse,
+                email,
+                group,
+                topic,
+                message,
+            } => commands::invite::invite_one(
+                &config,
+                &discourse,
+                &email,
+                &group,
+                topic,
+                message.as_deref(),
+                dry_run,
+            ),
+            InviteCommand::Bulk {
+                discourse,
+                local_path,
+                group,
+                topic,
+                message,
+            } => commands::invite::invite_bulk(
+                &config,
+                &discourse,
+                local_path.as_deref(),
+                &group,
+                topic,
+                message.as_deref(),
+                dry_run,
+            ),
+        },
+
         Commands::User { command } => match command {
             UserCommand::List {
                 discourse,
@@ -240,6 +281,45 @@ fn main() -> Result<()> {
                 discourse,
                 username,
             } => commands::user::user_unsuspend(&config, &discourse, &username, dry_run),
+            UserCommand::Silence {
+                discourse,
+                username,
+                until,
+                reason,
+            } => commands::user::user_silence(
+                &config,
+                &discourse,
+                &username,
+                &until,
+                &reason,
+                dry_run,
+            ),
+            UserCommand::Unsilence {
+                discourse,
+                username,
+            } => commands::user::user_unsilence(&config, &discourse, &username, dry_run),
+            UserCommand::Promote {
+                discourse,
+                username,
+                role,
+            } => commands::user::user_promote(
+                &config,
+                &discourse,
+                &username,
+                map_role(role),
+                dry_run,
+            ),
+            UserCommand::Demote {
+                discourse,
+                username,
+                role,
+            } => commands::user::user_demote(
+                &config,
+                &discourse,
+                &username,
+                map_role(role),
+                dry_run,
+            ),
             UserCommand::Groups { command } => match command {
                 UserGroupsCommand::List {
                     discourse,

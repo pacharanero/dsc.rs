@@ -100,6 +100,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: UserCommand,
     },
+    /// Send invites — single or bulk from a file.
+    #[command(visible_alias = "inv")]
+    Invite {
+        #[command(subcommand)]
+        command: InviteCommand,
+    },
     /// Create/list/restore backups.
     #[command(visible_alias = "bk")]
     Backup {
@@ -582,6 +588,45 @@ pub enum ThemeCommand {
 }
 
 #[derive(Subcommand)]
+pub enum InviteCommand {
+    /// Invite a single email address.
+    #[command(visible_alias = "s")]
+    Send {
+        /// Discourse name.
+        discourse: String,
+        /// Email address to invite.
+        email: String,
+        /// Add invitee to one or more groups on accept (repeatable).
+        #[arg(long, short = 'g')]
+        group: Vec<u64>,
+        /// Land the invitee on a specific topic on accept.
+        #[arg(long, short = 't')]
+        topic: Option<u64>,
+        /// Custom invitation message.
+        #[arg(long, short = 'm')]
+        message: Option<String>,
+    },
+    /// Bulk-invite from a file (or stdin) of email addresses.
+    #[command(visible_alias = "b")]
+    Bulk {
+        /// Discourse name.
+        discourse: String,
+        /// Path to a file of email addresses (one per line; blank lines and
+        /// `#` comments ignored). Reads stdin when omitted or `-`.
+        local_path: Option<PathBuf>,
+        /// Add every invitee to one or more groups on accept (repeatable).
+        #[arg(long, short = 'g')]
+        group: Vec<u64>,
+        /// Land every invitee on a specific topic on accept.
+        #[arg(long, short = 't')]
+        topic: Option<u64>,
+        /// Custom invitation message attached to each invite.
+        #[arg(long, short = 'm')]
+        message: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum UserCommand {
     /// List users via the admin users endpoint.
     #[command(visible_alias = "ls")]
@@ -632,12 +677,63 @@ pub enum UserCommand {
         /// Username.
         username: String,
     },
+    /// Silence a user (prevents posting; less visible than suspend).
+    #[command(visible_alias = "sil")]
+    Silence {
+        /// Discourse name.
+        discourse: String,
+        /// Username.
+        username: String,
+        /// When the silence ends. ISO-8601 timestamp; empty means
+        /// indefinite.
+        #[arg(long, short = 'u', default_value = "")]
+        until: String,
+        /// Reason shown to the user and in the audit log.
+        #[arg(long, short = 'r', default_value = "")]
+        reason: String,
+    },
+    /// Lift a silence on a user.
+    #[command(visible_alias = "unsil")]
+    Unsilence {
+        /// Discourse name.
+        discourse: String,
+        /// Username.
+        username: String,
+    },
+    /// Grant the user the admin or moderator role.
+    #[command(visible_alias = "pr")]
+    Promote {
+        /// Discourse name.
+        discourse: String,
+        /// Username.
+        username: String,
+        /// Role to grant.
+        #[arg(long, short = 'r', value_enum)]
+        role: RoleArg,
+    },
+    /// Revoke the user's admin or moderator role.
+    #[command(visible_alias = "de")]
+    Demote {
+        /// Discourse name.
+        discourse: String,
+        /// Username.
+        username: String,
+        /// Role to revoke.
+        #[arg(long, short = 'r', value_enum)]
+        role: RoleArg,
+    },
     /// Manage a user's group memberships.
     #[command(visible_alias = "g")]
     Groups {
         #[command(subcommand)]
         command: UserGroupsCommand,
     },
+}
+
+#[derive(ValueEnum, Clone, Copy)]
+pub enum RoleArg {
+    Admin,
+    Moderator,
 }
 
 #[derive(Subcommand)]

@@ -1,11 +1,10 @@
 use crate::api::DiscourseClient;
 use crate::api::GroupSummary;
 use crate::cli::{ListFormat, StructuredFormat};
-use crate::commands::common::{ensure_api_credentials, not_found, select_discourse};
+use crate::commands::common::{ensure_api_credentials, not_found, parse_emails, select_discourse};
 use crate::config::Config;
 use crate::utils::{normalize_baseurl, slugify};
 use anyhow::{Context, Result, anyhow};
-use std::collections::BTreeSet;
 use std::fs;
 use std::io::{self, Read};
 use std::path::Path;
@@ -221,78 +220,3 @@ fn read_email_source(local_path: Option<&Path>) -> Result<String> {
     }
 }
 
-/// Parse one-email-per-line input. Ignores blank lines, `#` comments (full-line
-/// or inline), and leading/trailing whitespace. De-duplicates while preserving
-/// the first-seen order.
-pub(crate) fn parse_emails(input: &str) -> Vec<String> {
-    let mut seen = BTreeSet::new();
-    let mut out = Vec::new();
-    for line in input.lines() {
-        let stripped = match line.find('#') {
-            Some(idx) => &line[..idx],
-            None => line,
-        };
-        let trimmed = stripped.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        // Sanity: must contain an '@'. We don't do full RFC validation.
-        if !trimmed.contains('@') {
-            continue;
-        }
-        let lower = trimmed.to_ascii_lowercase();
-        if seen.insert(lower.clone()) {
-            out.push(lower);
-        }
-    }
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::parse_emails;
-
-    #[test]
-    fn parses_one_per_line() {
-        let got = parse_emails("alice@example.com\nbob@example.com\n");
-        assert_eq!(got, vec!["alice@example.com", "bob@example.com"]);
-    }
-
-    #[test]
-    fn skips_blanks_and_comments() {
-        let got = parse_emails(
-            "\
-# onboarding list
-alice@example.com
-
-# new hires below
-bob@example.com # bob in marketing
-",
-        );
-        assert_eq!(got, vec!["alice@example.com", "bob@example.com"]);
-    }
-
-    #[test]
-    fn dedupes_preserving_first_seen_order() {
-        let got = parse_emails("alice@example.com\nbob@example.com\nALICE@example.com");
-        assert_eq!(got, vec!["alice@example.com", "bob@example.com"]);
-    }
-
-    #[test]
-    fn rejects_lines_without_at() {
-        let got = parse_emails("not_an_email\nalice@example.com");
-        assert_eq!(got, vec!["alice@example.com"]);
-    }
-
-    #[test]
-    fn lowercases_emails() {
-        let got = parse_emails("Alice@Example.com");
-        assert_eq!(got, vec!["alice@example.com"]);
-    }
-
-    #[test]
-    fn handles_crlf_line_endings() {
-        let got = parse_emails("alice@example.com\r\nbob@example.com\r\n");
-        assert_eq!(got, vec!["alice@example.com", "bob@example.com"]);
-    }
-}
