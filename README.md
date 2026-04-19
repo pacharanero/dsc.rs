@@ -89,11 +89,13 @@ dsc update myforum
   - [upload](docs/upload.md) — upload a file and return its short URL
   - [emoji](docs/emoji.md) — upload and list custom emoji
   - [topic](docs/topic.md) — pull, push, and sync topics as Markdown
+  - [post](docs/post.md) — edit, delete, and move individual posts
   - [category](docs/category.md) — list, pull, push, and copy categories
   - [palette](docs/palette.md) — list, pull, and push colour palettes
   - [plugin](docs/plugin.md) — list, install, and remove plugins
   - [theme](docs/theme.md) — list, install, remove, pull, push, and duplicate themes
-  - [group](docs/group.md) — list, inspect, and copy groups
+  - [group](docs/group.md) — list, inspect, copy, and bulk-add members
+  - [user](docs/user.md) — per-user operations (groups list/add/remove)
   - [backup](docs/backup.md) — create, list, and restore backups
   - [setting](docs/setting.md) — get and set site settings
   - [tag](docs/tag.md) — list tags and apply/remove them on topics

@@ -83,7 +83,12 @@ pub fn plugin_list(
     Ok(())
 }
 
-pub fn plugin_install(config: &Config, discourse_name: &str, url: &str) -> Result<()> {
+pub fn plugin_install(
+    config: &Config,
+    discourse_name: &str,
+    url: &str,
+    dry_run: bool,
+) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     let target = ssh_target(discourse);
     let template = std::env::var("DSC_SSH_PLUGIN_INSTALL_CMD")
@@ -93,6 +98,10 @@ pub fn plugin_install(config: &Config, discourse_name: &str, url: &str) -> Resul
             )
         })?;
     let command = render_template(&template, &[("url", url), ("name", url)]);
+    if dry_run {
+        println!("[dry-run] would run on {}: {}", target, command);
+        return Ok(());
+    }
     let output = run_ssh_command(&target, &command)?;
     println!("Plugin install completed: {}", url);
     if !output.trim().is_empty() {
@@ -101,7 +110,12 @@ pub fn plugin_install(config: &Config, discourse_name: &str, url: &str) -> Resul
     Ok(())
 }
 
-pub fn plugin_remove(config: &Config, discourse_name: &str, name: &str) -> Result<()> {
+pub fn plugin_remove(
+    config: &Config,
+    discourse_name: &str,
+    name: &str,
+    dry_run: bool,
+) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     let target = ssh_target(discourse);
     let template = std::env::var("DSC_SSH_PLUGIN_REMOVE_CMD")
@@ -111,6 +125,10 @@ pub fn plugin_remove(config: &Config, discourse_name: &str, name: &str) -> Resul
             )
         })?;
     let command = render_template(&template, &[("name", name), ("url", name)]);
+    if dry_run {
+        println!("[dry-run] would run on {}: {}", target, command);
+        return Ok(());
+    }
     let output = run_ssh_command(&target, &command)?;
     println!("Plugin removal completed: {}", name);
     if !output.trim().is_empty() {

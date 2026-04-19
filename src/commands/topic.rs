@@ -47,6 +47,7 @@ pub fn topic_push(
     discourse_name: &str,
     topic_id: u64,
     local_path: &Path,
+    dry_run: bool,
 ) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
@@ -58,6 +59,17 @@ pub fn topic_push(
         .get(0)
         .ok_or_else(|| anyhow!("topic has no posts"))?;
     let raw = read_markdown(local_path)?;
+    if dry_run {
+        println!(
+            "[dry-run] {}: would replace OP of topic {} (post id {}) with {} bytes from {}",
+            discourse.name,
+            topic_id,
+            post.id,
+            raw.len(),
+            local_path.display()
+        );
+        return Ok(());
+    }
     client.update_post(post.id, &raw)?;
     Ok(())
 }
@@ -142,6 +154,7 @@ pub fn topic_new(
     category_id: u64,
     title: &str,
     local_path: Option<&Path>,
+    dry_run: bool,
 ) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
@@ -153,6 +166,17 @@ pub fn topic_new(
     let raw = read_reply_input(local_path)?;
     if raw.trim().is_empty() {
         return Err(anyhow!("topic body is empty"));
+    }
+
+    if dry_run {
+        println!(
+            "[dry-run] {}: would create topic in category {} titled \"{}\" ({} bytes of body)",
+            discourse.name,
+            category_id,
+            title,
+            raw.len()
+        );
+        return Ok(());
     }
 
     let topic_id = client.create_topic(category_id, title, &raw)?;

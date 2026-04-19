@@ -9,8 +9,8 @@ pub struct Cli {
     /// Path to the config file. If omitted, dsc searches standard locations.
     #[arg(long, short = 'c')]
     pub config: Option<PathBuf>,
-    /// Describe destructive actions without sending them. Supported on a subset
-    /// of commands; unsupported commands run normally.
+    /// Describe destructive actions without sending them. Read-only commands
+    /// ignore the flag.
     #[arg(long, short = 'n', global = true)]
     pub dry_run: bool,
     #[command(subcommand)]
@@ -94,6 +94,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: GroupCommand,
     },
+    /// Operations that act from a user's perspective.
+    #[command(visible_alias = "usr")]
+    User {
+        #[command(subcommand)]
+        command: UserCommand,
+    },
     /// Create/list/restore backups.
     #[command(visible_alias = "bk")]
     Backup {
@@ -129,6 +135,12 @@ pub enum Commands {
     Tag {
         #[command(subcommand)]
         command: TagCommand,
+    },
+    /// Post-level operations: edit / delete / move.
+    #[command(visible_alias = "po")]
+    Post {
+        #[command(subcommand)]
+        command: PostCommand,
     },
     /// Open a Discourse in the default browser.
     #[command(visible_alias = "o")]
@@ -394,6 +406,21 @@ pub enum GroupCommand {
         /// Group ID.
         group: u64,
     },
+    /// Bulk add members to a group from a file (or stdin) of email addresses.
+    #[command(visible_alias = "a")]
+    Add {
+        /// Discourse name.
+        discourse: String,
+        /// Group ID.
+        group: u64,
+        /// Path to a file of email addresses (one per line; blank
+        /// lines and `#` comments are ignored). Reads stdin when
+        /// omitted or `-`.
+        local_path: Option<PathBuf>,
+        /// Send Discourse notifications to added users.
+        #[arg(long)]
+        notify: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -551,6 +578,87 @@ pub enum ThemeCommand {
         discourse: String,
         /// Theme ID to duplicate (from `dsc theme list`).
         theme_id: u64,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum UserCommand {
+    /// Manage a user's group memberships.
+    #[command(visible_alias = "g")]
+    Groups {
+        #[command(subcommand)]
+        command: UserGroupsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum UserGroupsCommand {
+    /// List the groups a user belongs to.
+    #[command(visible_alias = "ls")]
+    List {
+        /// Discourse name.
+        discourse: String,
+        /// Target username.
+        username: String,
+        /// Output format.
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
+        format: ListFormat,
+    },
+    /// Add a user to a group.
+    #[command(visible_alias = "a")]
+    Add {
+        /// Discourse name.
+        discourse: String,
+        /// Target username.
+        username: String,
+        /// Group ID.
+        group_id: u64,
+        /// Send Discourse notification to the user.
+        #[arg(long)]
+        notify: bool,
+    },
+    /// Remove a user from a group.
+    #[command(visible_alias = "rm")]
+    Remove {
+        /// Discourse name.
+        discourse: String,
+        /// Target username.
+        username: String,
+        /// Group ID.
+        group_id: u64,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PostCommand {
+    /// Edit a post by ID. Reads the new body from file or stdin.
+    #[command(visible_alias = "e")]
+    Edit {
+        /// Discourse name.
+        discourse: String,
+        /// Post ID.
+        post_id: u64,
+        /// Input file path. Reads stdin when omitted or `-`.
+        local_path: Option<PathBuf>,
+    },
+    /// Delete a post by ID.
+    #[command(visible_alias = "rm")]
+    Delete {
+        /// Discourse name.
+        discourse: String,
+        /// Post ID.
+        post_id: u64,
+    },
+    /// Move a post to a different topic.
+    #[command(visible_alias = "mv")]
+    Move {
+        /// Discourse name.
+        discourse: String,
+        /// Post ID to move.
+        post_id: u64,
+        /// Destination topic ID.
+        #[arg(long = "to-topic", short = 't')]
+        to_topic: u64,
     },
 }
 

@@ -82,6 +82,11 @@ impl DiscourseClient {
         self.client.delete(url).send().context("sending delete request")
     }
 
+    pub(crate) fn delete_builder(&self, path: &str) -> Result<RequestBuilder> {
+        let url = format!("{}{}", self.baseurl, path);
+        Ok(self.client.delete(url))
+    }
+
     /// Send a request, retrying up to 5 times on HTTP 429 responses.
     ///
     /// The `build` closure is called once per attempt and must produce a fresh

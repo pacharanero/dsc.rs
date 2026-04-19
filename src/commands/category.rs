@@ -67,6 +67,7 @@ pub fn category_copy(
     source: &str,
     target: Option<&str>,
     category: &str,
+    dry_run: bool,
 ) -> Result<()> {
     let source_discourse = select_discourse(config, Some(source))?;
     let target_name = target.unwrap_or(source);
@@ -84,6 +85,13 @@ pub fn category_copy(
     copied.name = format!("Copy of {}", category.name);
     copied.slug = format!("{}-copy", category.slug);
     copied.id = None;
+    if dry_run {
+        println!(
+            "[dry-run] would create category \"{}\" (slug: {}) on {}",
+            copied.name, copied.slug, target_discourse.name
+        );
+        return Ok(());
+    }
     let target_client = DiscourseClient::new(target_discourse)?;
     let new_id = target_client.create_category(&copied)?;
     let url = format!(

@@ -77,7 +77,12 @@ pub fn theme_list(
     Ok(())
 }
 
-pub fn theme_install(config: &Config, discourse_name: &str, url: &str) -> Result<()> {
+pub fn theme_install(
+    config: &Config,
+    discourse_name: &str,
+    url: &str,
+    dry_run: bool,
+) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     let target = ssh_target(discourse);
     let template = std::env::var("DSC_SSH_THEME_INSTALL_CMD")
@@ -87,6 +92,10 @@ pub fn theme_install(config: &Config, discourse_name: &str, url: &str) -> Result
             )
         })?;
     let command = render_template(&template, &[("url", url), ("name", url)]);
+    if dry_run {
+        println!("[dry-run] would run on {}: {}", target, command);
+        return Ok(());
+    }
     let output = run_ssh_command(&target, &command)?;
     println!("Theme install completed: {}", url);
     if !output.trim().is_empty() {
@@ -95,7 +104,12 @@ pub fn theme_install(config: &Config, discourse_name: &str, url: &str) -> Result
     Ok(())
 }
 
-pub fn theme_remove(config: &Config, discourse_name: &str, name: &str) -> Result<()> {
+pub fn theme_remove(
+    config: &Config,
+    discourse_name: &str,
+    name: &str,
+    dry_run: bool,
+) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     let target = ssh_target(discourse);
     let template = std::env::var("DSC_SSH_THEME_REMOVE_CMD")
@@ -105,6 +119,10 @@ pub fn theme_remove(config: &Config, discourse_name: &str, name: &str) -> Result
             )
         })?;
     let command = render_template(&template, &[("name", name), ("url", name)]);
+    if dry_run {
+        println!("[dry-run] would run on {}: {}", target, command);
+        return Ok(());
+    }
     let output = run_ssh_command(&target, &command)?;
     println!("Theme removal completed: {}", name);
     if !output.trim().is_empty() {

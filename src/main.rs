@@ -94,7 +94,7 @@ fn main() -> Result<()> {
                 discourse,
                 local_path,
                 topic_id,
-            } => commands::topic::topic_push(&config, &discourse, topic_id, &local_path),
+            } => commands::topic::topic_push(&config, &discourse, topic_id, &local_path, dry_run),
 
             TopicCommand::Sync {
                 discourse,
@@ -125,6 +125,7 @@ fn main() -> Result<()> {
                 category_id,
                 &title,
                 local_path.as_deref(),
+                dry_run,
             ),
         },
 
@@ -140,9 +141,13 @@ fn main() -> Result<()> {
                 discourse,
                 target,
                 category,
-            } => {
-                commands::category::category_copy(&config, &discourse, target.as_deref(), &category)
-            }
+            } => commands::category::category_copy(
+                &config,
+                &discourse,
+                target.as_deref(),
+                &category,
+                dry_run,
+            ),
 
             CategoryCommand::Pull {
                 discourse,
@@ -183,7 +188,61 @@ fn main() -> Result<()> {
                 discourse,
                 target,
                 group,
-            } => commands::group::group_copy(&config, &discourse, target.as_deref(), group),
+            } => commands::group::group_copy(
+                &config,
+                &discourse,
+                target.as_deref(),
+                group,
+                dry_run,
+            ),
+
+            GroupCommand::Add {
+                discourse,
+                group,
+                local_path,
+                notify,
+            } => commands::group::group_add(
+                &config,
+                &discourse,
+                group,
+                local_path.as_deref(),
+                notify,
+                dry_run,
+            ),
+        },
+
+        Commands::User { command } => match command {
+            UserCommand::Groups { command } => match command {
+                UserGroupsCommand::List {
+                    discourse,
+                    username,
+                    format,
+                } => commands::user::user_groups_list(&config, &discourse, &username, format),
+                UserGroupsCommand::Add {
+                    discourse,
+                    username,
+                    group_id,
+                    notify,
+                } => commands::user::user_groups_add(
+                    &config,
+                    &discourse,
+                    &username,
+                    group_id,
+                    notify,
+                    dry_run,
+                ),
+                UserGroupsCommand::Remove {
+                    discourse,
+                    username,
+                    group_id,
+                } => commands::user::user_groups_remove(
+                    &config,
+                    &discourse,
+                    &username,
+                    group_id,
+                    dry_run,
+                ),
+            },
         },
 
         Commands::Backup { command } => match command {
@@ -235,10 +294,10 @@ fn main() -> Result<()> {
                 verbose,
             } => commands::plugin::plugin_list(&config, &discourse, format, verbose),
             PluginCommand::Install { discourse, url } => {
-                commands::plugin::plugin_install(&config, &discourse, &url)
+                commands::plugin::plugin_install(&config, &discourse, &url, dry_run)
             }
             PluginCommand::Remove { discourse, name } => {
-                commands::plugin::plugin_remove(&config, &discourse, &name)
+                commands::plugin::plugin_remove(&config, &discourse, &name, dry_run)
             }
         },
 
@@ -249,10 +308,10 @@ fn main() -> Result<()> {
                 verbose,
             } => commands::theme::theme_list(&config, &discourse, format, verbose),
             ThemeCommand::Install { discourse, url } => {
-                commands::theme::theme_install(&config, &discourse, &url)
+                commands::theme::theme_install(&config, &discourse, &url, dry_run)
             }
             ThemeCommand::Remove { discourse, name } => {
-                commands::theme::theme_remove(&config, &discourse, &name)
+                commands::theme::theme_remove(&config, &discourse, &name, dry_run)
             }
             ThemeCommand::Pull {
                 discourse,
@@ -319,6 +378,28 @@ fn main() -> Result<()> {
             upload_type,
             format,
         } => commands::upload::upload(&config, &discourse, &file, &upload_type, format),
+
+        Commands::Post { command } => match command {
+            PostCommand::Edit {
+                discourse,
+                post_id,
+                local_path,
+            } => commands::post::post_edit(
+                &config,
+                &discourse,
+                post_id,
+                local_path.as_deref(),
+                dry_run,
+            ),
+            PostCommand::Delete { discourse, post_id } => {
+                commands::post::post_delete(&config, &discourse, post_id, dry_run)
+            }
+            PostCommand::Move {
+                discourse,
+                post_id,
+                to_topic,
+            } => commands::post::post_move(&config, &discourse, post_id, to_topic, dry_run),
+        },
 
         Commands::Tag { command } => match command {
             TagCommand::List { discourse, format } => {

@@ -17,6 +17,8 @@ mod uploads;
 
 pub use client::{DiscourseClient, VersionInfo};
 pub use models::*;
+pub use groups::AddMembersOutcome;
 pub use search::SearchHit;
 pub use tags::TagInfo;
+pub use topics::PostInfo;
 pub use uploads::UploadInfo;

@@ -5,8 +5,18 @@ use super::models::{
 };
 use anyhow::{Context, Result, anyhow};
 use reqwest::StatusCode;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
+
+/// Result of a bulk add-members call.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct AddMembersOutcome {
+    /// Usernames Discourse reported as added by the call.
+    pub added_usernames: Vec<String>,
+    /// Error strings Discourse returned (unknown emails, etc.).
+    pub errors: Vec<String>,
+}
 
 impl DiscourseClient {
     /// Fetch all groups.
@@ -214,6 +224,104 @@ impl DiscourseClient {
         Ok(id)
     }
 
+    /// Add members to a group by username (PUT /groups/:id/members.json).
+    pub fn add_group_members_by_username(
+        &self,
+        group_id: u64,
+        usernames: &[String],
+        notify_users: bool,
+    ) -> Result<AddMembersOutcome> {
+        if usernames.is_empty() {
+            return Ok(AddMembersOutcome::default());
+        }
+        let path = format!("/groups/{}/members.json", group_id);
+        let joined = usernames.join(",");
+        let notify = if notify_users { "true" } else { "false" };
+        let payload = [("usernames", joined.as_str()), ("notify_users", notify)];
+        let response = self.send_retrying(|| Ok(self.put(&path)?.form(&payload)))?;
+        let status = response.status();
+        let text = response.text().context("reading add-members response")?;
+        if !status.is_success() {
+            return Err(http_error("add group members request", status, &text));
+        }
+        parse_add_members_outcome(&text)
+    }
+
+    /// Remove members from a group by username (DELETE /groups/:id/members.json).
+    pub fn remove_group_members_by_username(
+        &self,
+        group_id: u64,
+        usernames: &[String],
+    ) -> Result<()> {
+        if usernames.is_empty() {
+            return Ok(());
+        }
+        let path = format!(
+            "/groups/{}/members.json?usernames={}",
+            group_id,
+            usernames.join(",")
+        );
+        let response = self.send_retrying(|| Ok(self.delete_builder(&path)?))?;
+        let status = response.status();
+        if !status.is_success() {
+            let text = response
+                .text()
+                .unwrap_or_else(|_| "<failed to read response body>".to_string());
+            return Err(http_error("remove group members request", status, &text));
+        }
+        Ok(())
+    }
+
+    /// Return the list of groups a user belongs to, by username.
+    pub fn fetch_user_groups(&self, username: &str) -> Result<Vec<GroupSummary>> {
+        let path = format!("/u/{}.json", username);
+        let response = self.get(&path)?;
+        let status = response.status();
+        let text = response.text().context("reading user response body")?;
+        if !status.is_success() {
+            return Err(http_error("user request", status, &text));
+        }
+        let value: Value = serde_json::from_str(&text).context("parsing user response json")?;
+        let groups = value
+            .get("user")
+            .and_then(|u| u.get("groups"))
+            .and_then(|g| g.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| serde_json::from_value::<GroupSummary>(v.clone()).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(groups)
+    }
+
+    /// Add members to a group by email (PUT /groups/:id/members.json).
+    ///
+    /// Returns a tuple of (added_usernames, not_found_emails) parsed loosely
+    /// from the response; both lists may be empty on success if the response
+    /// doesn't surface them.
+    pub fn add_group_members_by_email(
+        &self,
+        group_id: u64,
+        emails: &[String],
+        notify_users: bool,
+    ) -> Result<AddMembersOutcome> {
+        if emails.is_empty() {
+            return Ok(AddMembersOutcome::default());
+        }
+        let path = format!("/groups/{}/members.json", group_id);
+        let joined = emails.join(",");
+        let notify = if notify_users { "true" } else { "false" };
+        let payload = [("emails", joined.as_str()), ("notify_users", notify)];
+        let response = self.send_retrying(|| Ok(self.put(&path)?.form(&payload)))?;
+        let status = response.status();
+        let text = response.text().context("reading add-members response")?;
+        if !status.is_success() {
+            return Err(http_error("add group members request", status, &text));
+        }
+        parse_add_members_outcome(&text)
+    }
+
     fn fetch_group_detail_by_path(&self, path: &str) -> Result<Option<GroupDetail>> {
         let response = self.get(path)?;
         let status = response.status();
@@ -356,4 +464,30 @@ fn extract_next_groups_path(value: &Value) -> Option<String> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .filter(|s| !s.trim().is_empty())
+}
+
+fn parse_add_members_outcome(body: &str) -> Result<AddMembersOutcome> {
+    let value: Value = serde_json::from_str(body).context("parsing add-members response json")?;
+    let added_usernames = value
+        .get("usernames")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let errors = value
+        .get("errors")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(AddMembersOutcome {
+        added_usernames,
+        errors,
+    })
 }
