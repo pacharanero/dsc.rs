@@ -14,6 +14,7 @@ mod tags;
 mod themes;
 mod topics;
 mod uploads;
+mod users;
 
 pub use client::{DiscourseClient, VersionInfo};
 pub use models::*;
@@ -22,3 +23,4 @@ pub use search::SearchHit;
 pub use tags::TagInfo;
 pub use topics::PostInfo;
 pub use uploads::UploadInfo;
+pub use users::{UserDetail, UserSummary};

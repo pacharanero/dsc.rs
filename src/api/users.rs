@@ -1,0 +1,134 @@
+use super::client::DiscourseClient;
+use super::error::http_error;
+use anyhow::{Context, Result, anyhow};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+/// One row from /admin/users/list/<type>.json.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct UserSummary {
+    pub id: u64,
+    pub username: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub trust_level: Option<u64>,
+    #[serde(default)]
+    pub admin: Option<bool>,
+    #[serde(default)]
+    pub moderator: Option<bool>,
+    #[serde(default)]
+    pub suspended: Option<bool>,
+    #[serde(default)]
+    pub silenced: Option<bool>,
+    #[serde(default)]
+    pub last_seen_at: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+/// Distilled /users/<username>.json payload.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct UserDetail {
+    pub id: u64,
+    pub username: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub trust_level: Option<u64>,
+    #[serde(default)]
+    pub admin: Option<bool>,
+    #[serde(default)]
+    pub moderator: Option<bool>,
+    #[serde(default)]
+    pub suspended_till: Option<String>,
+    #[serde(default)]
+    pub silenced_till: Option<String>,
+    #[serde(default)]
+    pub last_seen_at: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub post_count: Option<u64>,
+    #[serde(default)]
+    pub groups: Vec<Value>,
+}
+
+impl DiscourseClient {
+    /// List users via the admin users endpoint.
+    ///
+    /// `listing` is one of: `active` (default), `new`, `staff`, `suspended`,
+    /// `silenced`, `staged`. Discourse paginates 100 per page.
+    pub fn admin_list_users(&self, listing: &str, page: u32) -> Result<Vec<UserSummary>> {
+        let path = format!(
+            "/admin/users/list/{}.json?show_emails=true&page={}",
+            listing, page
+        );
+        let response = self.get(&path)?;
+        let status = response.status();
+        let text = response.text().context("reading user list response")?;
+        if !status.is_success() {
+            return Err(http_error("admin user list request", status, &text));
+        }
+        let users: Vec<UserSummary> =
+            serde_json::from_str(&text).context("parsing user list response")?;
+        Ok(users)
+    }
+
+    /// Look up a user by username (public endpoint).
+    pub fn fetch_user_detail(&self, username: &str) -> Result<UserDetail> {
+        let path = format!("/u/{}.json", username);
+        let response = self.get(&path)?;
+        let status = response.status();
+        let text = response.text().context("reading user detail response")?;
+        if !status.is_success() {
+            return Err(http_error("user detail request", status, &text));
+        }
+        let value: Value =
+            serde_json::from_str(&text).context("parsing user detail response")?;
+        let user = value
+            .get("user")
+            .ok_or_else(|| anyhow!("user detail response missing `user` field"))?;
+        let detail: UserDetail =
+            serde_json::from_value(user.clone()).context("deserialising user detail")?;
+        Ok(detail)
+    }
+
+    /// Suspend a user by ID. `until` is an ISO-8601 timestamp (or any string
+    /// Discourse accepts, like "forever"); `reason` is mandatory from the UI
+    /// but Discourse accepts empty via the API.
+    pub fn suspend_user(&self, user_id: u64, until: &str, reason: &str) -> Result<()> {
+        let path = format!("/admin/users/{}/suspend.json", user_id);
+        let payload = [
+            ("suspend_until", until),
+            ("reason", reason),
+        ];
+        let response = self.send_retrying(|| Ok(self.put(&path)?.form(&payload)))?;
+        let status = response.status();
+        if !status.is_success() {
+            let text = response
+                .text()
+                .unwrap_or_else(|_| "<failed to read response body>".to_string());
+            return Err(http_error("suspend user request", status, &text));
+        }
+        Ok(())
+    }
+
+    /// Unsuspend a user by ID.
+    pub fn unsuspend_user(&self, user_id: u64) -> Result<()> {
+        let path = format!("/admin/users/{}/unsuspend.json", user_id);
+        let response = self.send_retrying(|| Ok(self.put(&path)?))?;
+        let status = response.status();
+        if !status.is_success() {
+            let text = response
+                .text()
+                .unwrap_or_else(|_| "<failed to read response body>".to_string());
+            return Err(http_error("unsuspend user request", status, &text));
+        }
+        Ok(())
+    }
+}

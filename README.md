@@ -95,7 +95,7 @@ dsc update myforum
   - [plugin](docs/plugin.md) — list, install, and remove plugins
   - [theme](docs/theme.md) — list, install, remove, pull, push, and duplicate themes
   - [group](docs/group.md) — list, inspect, copy, and bulk-add members
-  - [user](docs/user.md) — per-user operations (groups list/add/remove)
+  - [user](docs/user.md) — list, inspect, suspend, and manage group memberships
   - [backup](docs/backup.md) — create, list, and restore backups
   - [setting](docs/setting.md) — get and set site settings
   - [tag](docs/tag.md) — list tags and apply/remove them on topics

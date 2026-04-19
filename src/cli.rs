@@ -583,6 +583,55 @@ pub enum ThemeCommand {
 
 #[derive(Subcommand)]
 pub enum UserCommand {
+    /// List users via the admin users endpoint.
+    #[command(visible_alias = "ls")]
+    List {
+        /// Discourse name.
+        discourse: String,
+        /// Listing type: active | new | staff | suspended | silenced | staged.
+        #[arg(long, short = 'l', default_value = "active")]
+        listing: String,
+        /// Page number (Discourse paginates 100 per page).
+        #[arg(long, short = 'p', default_value_t = 1)]
+        page: u32,
+        /// Output format.
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
+        format: ListFormat,
+    },
+    /// Show detailed info for a user.
+    #[command(visible_alias = "i")]
+    Info {
+        /// Discourse name.
+        discourse: String,
+        /// Username.
+        username: String,
+        /// Output format.
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
+        format: ListFormat,
+    },
+    /// Suspend a user.
+    #[command(visible_alias = "sus")]
+    Suspend {
+        /// Discourse name.
+        discourse: String,
+        /// Username.
+        username: String,
+        /// When the suspension ends. ISO-8601 timestamp (e.g.
+        /// `2026-12-31T00:00:00Z`) or `forever`.
+        #[arg(long, short = 'u', default_value = "forever")]
+        until: String,
+        /// Reason shown to the user and in the audit log.
+        #[arg(long, short = 'r', default_value = "")]
+        reason: String,
+    },
+    /// Remove a suspension from a user.
+    #[command(visible_alias = "uns")]
+    Unsuspend {
+        /// Discourse name.
+        discourse: String,
+        /// Username.
+        username: String,
+    },
     /// Manage a user's group memberships.
     #[command(visible_alias = "g")]
     Groups {

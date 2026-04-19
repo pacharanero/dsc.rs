@@ -212,6 +212,34 @@ fn main() -> Result<()> {
         },
 
         Commands::User { command } => match command {
+            UserCommand::List {
+                discourse,
+                listing,
+                page,
+                format,
+            } => commands::user::user_list(&config, &discourse, &listing, page, format),
+            UserCommand::Info {
+                discourse,
+                username,
+                format,
+            } => commands::user::user_info(&config, &discourse, &username, format),
+            UserCommand::Suspend {
+                discourse,
+                username,
+                until,
+                reason,
+            } => commands::user::user_suspend(
+                &config,
+                &discourse,
+                &username,
+                &until,
+                &reason,
+                dry_run,
+            ),
+            UserCommand::Unsuspend {
+                discourse,
+                username,
+            } => commands::user::user_unsuspend(&config, &discourse, &username, dry_run),
             UserCommand::Groups { command } => match command {
                 UserGroupsCommand::List {
                     discourse,

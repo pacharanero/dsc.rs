@@ -4,6 +4,175 @@ use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
 use anyhow::Result;
 
+pub fn user_list(
+    config: &Config,
+    discourse_name: &str,
+    listing: &str,
+    page: u32,
+    format: ListFormat,
+) -> Result<()> {
+    let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
+    let client = DiscourseClient::new(discourse)?;
+    let users = client.admin_list_users(listing, page)?;
+
+    match format {
+        ListFormat::Text => {
+            if users.is_empty() {
+                println!("No users found in listing '{}'.", listing);
+                return Ok(());
+            }
+            let name_width = users
+                .iter()
+                .map(|u| u.username.len())
+                .max()
+                .unwrap_or(0)
+                .max(8);
+            for u in &users {
+                let flag = if u.admin.unwrap_or(false) {
+                    "admin"
+                } else if u.moderator.unwrap_or(false) {
+                    "mod"
+                } else if u.suspended.unwrap_or(false) {
+                    "suspended"
+                } else if u.silenced.unwrap_or(false) {
+                    "silenced"
+                } else {
+                    "-"
+                };
+                let tl = u
+                    .trust_level
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "?".to_string());
+                println!(
+                    "{:<width$}  id:{}  tl:{}  {}",
+                    u.username,
+                    u.id,
+                    tl,
+                    flag,
+                    width = name_width
+                );
+            }
+        }
+        ListFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&users)?);
+        }
+        ListFormat::Yaml => {
+            println!("{}", serde_yaml::to_string(&users)?);
+        }
+    }
+
+    Ok(())
+}
+
+pub fn user_info(
+    config: &Config,
+    discourse_name: &str,
+    username: &str,
+    format: ListFormat,
+) -> Result<()> {
+    let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
+    let client = DiscourseClient::new(discourse)?;
+    let detail = client.fetch_user_detail(username)?;
+
+    match format {
+        ListFormat::Text => {
+            println!("id:          {}", detail.id);
+            println!("username:    {}", detail.username);
+            if let Some(name) = &detail.name {
+                println!("name:        {}", name);
+            }
+            if let Some(email) = &detail.email {
+                println!("email:       {}", email);
+            }
+            if let Some(tl) = detail.trust_level {
+                println!("trust_level: {}", tl);
+            }
+            if detail.admin.unwrap_or(false) {
+                println!("role:        admin");
+            } else if detail.moderator.unwrap_or(false) {
+                println!("role:        moderator");
+            }
+            if let Some(until) = &detail.suspended_till {
+                println!("suspended:   until {}", until);
+            }
+            if let Some(until) = &detail.silenced_till {
+                println!("silenced:    until {}", until);
+            }
+            if let Some(last) = &detail.last_seen_at {
+                println!("last_seen:   {}", last);
+            }
+            if let Some(created) = &detail.created_at {
+                println!("created:     {}", created);
+            }
+            if let Some(posts) = detail.post_count {
+                println!("posts:       {}", posts);
+            }
+            if !detail.groups.is_empty() {
+                println!("groups:      {}", detail.groups.len());
+            }
+        }
+        ListFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&detail)?);
+        }
+        ListFormat::Yaml => {
+            println!("{}", serde_yaml::to_string(&detail)?);
+        }
+    }
+    Ok(())
+}
+
+pub fn user_suspend(
+    config: &Config,
+    discourse_name: &str,
+    username: &str,
+    until: &str,
+    reason: &str,
+    dry_run: bool,
+) -> Result<()> {
+    let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
+    let client = DiscourseClient::new(discourse)?;
+
+    if dry_run {
+        println!(
+            "[dry-run] {}: would suspend {} until {} (reason: {})",
+            discourse.name,
+            username,
+            until,
+            if reason.is_empty() { "<none>" } else { reason }
+        );
+        return Ok(());
+    }
+
+    let detail = client.fetch_user_detail(username)?;
+    client.suspend_user(detail.id, until, reason)?;
+    println!("Suspended {} (id:{}) until {}", detail.username, detail.id, until);
+    Ok(())
+}
+
+pub fn user_unsuspend(
+    config: &Config,
+    discourse_name: &str,
+    username: &str,
+    dry_run: bool,
+) -> Result<()> {
+    let discourse = select_discourse(config, Some(discourse_name))?;
+    ensure_api_credentials(discourse)?;
+    let client = DiscourseClient::new(discourse)?;
+
+    if dry_run {
+        println!("[dry-run] {}: would unsuspend {}", discourse.name, username);
+        return Ok(());
+    }
+
+    let detail = client.fetch_user_detail(username)?;
+    client.unsuspend_user(detail.id)?;
+    println!("Unsuspended {} (id:{})", detail.username, detail.id);
+    Ok(())
+}
+
 pub fn user_groups_list(
     config: &Config,
     discourse_name: &str,

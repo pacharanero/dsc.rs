@@ -1,6 +1,43 @@
 # dsc user
 
-Operations that act from a user's perspective. The symmetric group-side commands live under [`dsc group`](group.md).
+User-level operations. The symmetric group-side commands live under [`dsc group`](group.md).
+
+## dsc user list
+
+```text
+dsc user list <discourse> [--listing active|new|staff|suspended|silenced|staged] [--page N] [--format text|json|yaml]
+```
+
+Lists users via Discourse's admin users endpoint. Default listing is `active`. Each page is up to 100 rows; use `--page` to iterate. Text mode shows username, id, trust level, and a role flag (admin/mod/suspended/silenced/-).
+
+```bash
+dsc user list myforum                         # first page of active users
+dsc user list myforum --listing suspended --format json
+```
+
+## dsc user info
+
+```text
+dsc user info <discourse> <username> [--format text|json|yaml]
+```
+
+Shows id, username, name, email (if returned by the server), trust level, role, suspension / silence state, last-seen, created-at, post count, and group count.
+
+## dsc user suspend
+
+```text
+dsc user suspend <discourse> <username> [--until <when>] [--reason <text>]
+```
+
+Suspends a user. `--until` defaults to `forever`; otherwise pass an ISO-8601 timestamp such as `2026-12-31T00:00:00Z`. `--reason` is stored in the audit log and shown to the user. Honours `--dry-run`.
+
+## dsc user unsuspend
+
+```text
+dsc user unsuspend <discourse> <username>
+```
+
+Lifts an existing suspension. Honours `--dry-run`.
 
 ## dsc user groups list
 
