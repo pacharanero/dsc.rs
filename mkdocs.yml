@@ -1,0 +1,83 @@
+site_name: dsc
+site_description: Discourse CLI — manage multiple Discourse forums from the terminal.
+site_url: https://pacharanero.github.io/dsc/
+repo_url: https://github.com/pacharanero/dsc
+repo_name: pacharanero/dsc
+edit_uri: edit/main/docs/
+
+theme:
+  variant: classic
+  features:
+    - content.code.copy
+    - content.code.annotate
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - toc.follow
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Configuration: configuration.md
+      - Shell completions: completions.md
+  - Content commands:
+      - topic: topic.md
+      - post: post.md
+      - category: category.md
+      - search: search.md
+      - upload: upload.md
+      - tag: tag.md
+      - emoji: emoji.md
+  - Users & access:
+      - user: user.md
+      - group: group.md
+      - invite: invite.md
+      - pm: pm.md
+      - api-key: api-key.md
+  - Install management:
+      - list: list.md
+      - add: add.md
+      - import: import.md
+      - open: open.md
+      - update: update.md
+      - config: config.md
+  - Site admin:
+      - setting: setting.md
+      - backup: backup.md
+      - theme: theme.md
+      - plugin: plugin.md
+      - palette: palette.md
+  - Development: development.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:zensical.extensions.emoji.twemoji
+      emoji_generator: !!python/name:zensical.extensions.emoji.to_svg
+
+copyright: >-
+  Copyright &copy; 2025–2026 Marcus Baw.
+  Source at <a href="https://github.com/pacharanero/dsc">pacharanero/dsc</a>.

@@ -20,3 +20,6 @@ testdsc.toml
 
 ### Private notes
 .marcus/
+
+### Zensical docs build output
+/site/
