@@ -10,14 +10,13 @@ Pick the one that fits your platform:
 
 ```bash
 # Linux / macOS one-liner
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/pacharanero/dsc/releases/latest/download/dsc-rs-installer.sh | sh
+curl -LsSf https://pacharanero.github.io/dsc/install.sh | sh
 
 # macOS / Linux via Homebrew (formula name matches the crate)
 brew tap pacharanero/tap && brew install dsc-rs
 
 # Windows one-liner (PowerShell)
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/pacharanero/dsc/releases/latest/download/dsc-rs-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://pacharanero.github.io/dsc/install.ps1 | iex"
 
 # Or via Cargo if you already have a Rust toolchain
 cargo install dsc-rs

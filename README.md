@@ -20,15 +20,17 @@ Most functionality uses the Discourse REST API. `dsc update` runs remote rebuild
 ### Shell installer — Linux and macOS
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/pacharanero/dsc/releases/latest/download/dsc-rs-installer.sh | sh
+curl -LsSf https://pacharanero.github.io/dsc/install.sh | sh
 ```
 
 Downloads a prebuilt binary for your platform and installs it to `~/.cargo/bin` (or `$CARGO_HOME/bin` if set). Supports `x86_64` and `aarch64` on both Linux and macOS.
 
+This short URL proxies to cargo-dist's real installer on the [latest GitHub release](https://github.com/pacharanero/dsc/releases/latest) — fine for most purposes, but if you'd rather pin to a specific version or audit the script you can fetch it directly from the release assets.
+
 ### PowerShell installer — Windows
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/pacharanero/dsc/releases/latest/download/dsc-rs-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://pacharanero.github.io/dsc/install.ps1 | iex"
 ```
 
 Downloads the Windows `x86_64` binary and installs it to `%CARGO_HOME%\bin`.
