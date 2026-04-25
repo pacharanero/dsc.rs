@@ -126,6 +126,7 @@ dsc update myforum
   - [setting](docs/setting.md) — get and set site settings
   - [tag](docs/tag.md) — list tags and apply/remove them on topics
   - [config](docs/config.md) — inspect and validate the dsc config itself
+  - [harden](docs/harden.md) — provision a fresh Ubuntu server (WIP, stage 1)
 - [Shell completions](docs/completions.md) — bash, zsh, and fish
 - [Development](docs/development.md) — building, testing, releasing, project layout
 

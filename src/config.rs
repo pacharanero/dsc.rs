@@ -25,6 +25,59 @@ where
 pub struct Config {
     #[serde(default)]
     pub discourse: Vec<DiscourseConfig>,
+    #[serde(default)]
+    pub harden: HardenConfig,
+}
+
+/// User overrides for `dsc harden` defaults. Every field is optional;
+/// anything left unset falls back to the built-in defaults applied in
+/// `commands::harden::resolve_options`. CLI flags override this block on
+/// a per-run basis.
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+pub struct HardenConfig {
+    /// Username for the new sudo-enabled non-root account. Default: `discourse`.
+    #[serde(default, deserialize_with = "deserialize_opt_string_empty_as_none")]
+    pub new_user: Option<String>,
+    /// SSH port to move the daemon to in stage 2. Default: 2227.
+    #[serde(default, deserialize_with = "deserialize_opt_u64_zero_as_none")]
+    pub ssh_port: Option<u64>,
+    /// URL to fetch the Docker installer from. Default: `https://get.docker.com`.
+    #[serde(default, deserialize_with = "deserialize_opt_string_empty_as_none")]
+    pub docker_install_url: Option<String>,
+    /// Whether to install Docker rootless. Default: true.
+    #[serde(default)]
+    pub docker_rootless: Option<bool>,
+    /// Swap file size in GB. 0 to skip. Default: 2.
+    #[serde(default)]
+    pub swap_size_gb: Option<u32>,
+    /// Cap on journald disk use. Default: `500M`.
+    #[serde(default, deserialize_with = "deserialize_opt_string_empty_as_none")]
+    pub journald_max_use: Option<String>,
+    /// Timezone to set via `timedatectl`. Default: `UTC`.
+    #[serde(default, deserialize_with = "deserialize_opt_string_empty_as_none")]
+    pub timezone: Option<String>,
+    /// Whether to enable unattended security upgrades. Default: true.
+    #[serde(default)]
+    pub unattended_security_upgrades: Option<bool>,
+    /// Whether to install fail2ban. Default: true.
+    #[serde(default)]
+    pub fail2ban: Option<bool>,
+    /// Whether to install mosh and open UDP 60000-61000. Default: false.
+    #[serde(default)]
+    pub mosh: Option<bool>,
+    /// Override sshd `Ciphers` line. Defaults to dsc's pinned modern set.
+    #[serde(default, deserialize_with = "deserialize_opt_string_empty_as_none")]
+    pub sshd_ciphers: Option<String>,
+    /// Override sshd `KexAlgorithms` line. Defaults to dsc's pinned modern set.
+    #[serde(default, deserialize_with = "deserialize_opt_string_empty_as_none")]
+    pub sshd_kex: Option<String>,
+    /// Override sshd `MACs` line. Defaults to dsc's pinned modern set.
+    #[serde(default, deserialize_with = "deserialize_opt_string_empty_as_none")]
+    pub sshd_macs: Option<String>,
+    /// Extra ufw `allow` rules applied after the standard set
+    /// (e.g. `["3000/tcp", "192.168.1.0/24"]`).
+    #[serde(default)]
+    pub extra_ufw_allow: Option<Vec<String>>,
 }
 
 /// Configuration for a single Discourse install.

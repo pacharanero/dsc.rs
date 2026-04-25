@@ -23,3 +23,35 @@ api_username = "system"
 ssh_host = "community.example.org"
 tags = ["staging"]
 changelog_topic_id = 456
+
+# ---------------------------------------------------------------------------
+# Defaults for `dsc harden`. Every key below is optional — what's shown is
+# what dsc would use anyway. Override per-run with the corresponding flag,
+# e.g. `--ssh-port 40022`.
+# ---------------------------------------------------------------------------
+# [harden]
+# new_user                     = "discourse"
+# ssh_port                     = 2227
+#
+# # Where the Docker installer is fetched from. Pin to a snapshot if you
+# # want to vet the script before each run.
+# docker_install_url           = "https://get.docker.com"
+# docker_rootless              = true
+#
+# # Server posture
+# swap_size_gb                 = 2          # 0 to skip
+# journald_max_use             = "500M"
+# timezone                     = "UTC"
+# unattended_security_upgrades = true
+# fail2ban                     = true
+# mosh                         = false      # opt-in; opens UDP 60000-61000
+#
+# # SSH algorithm pins. Defaults drop CBC ciphers and weak KEX/MACs.
+# # Override only if you need to be permissive for older clients.
+# # sshd_ciphers = "..."
+# # sshd_kex     = "..."
+# # sshd_macs    = "..."
+#
+# # Extra ufw `allow` rules applied after the standard set
+# # (22, the new ssh_port, 25, 80, 443, and optionally MOSH UDP).
+# # extra_ufw_allow = ["3000/tcp", "192.168.1.0/24"]

@@ -580,9 +580,10 @@ fn main() -> Result<()> {
             ssh_port,
             pubkey_file,
         } => commands::harden::harden(
+            &config.harden,
             &host,
             &ssh_user,
-            &new_user,
+            new_user.as_deref(),
             ssh_port,
             &pubkey_file,
             dry_run,

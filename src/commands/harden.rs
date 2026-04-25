@@ -8,6 +8,7 @@
 //! (sshd tightening) and 3 (fail2ban / upgrades / timezone / swap / docker
 //! / ufw) land in follow-up commits.
 
+use crate::config::HardenConfig;
 use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::Path;
@@ -28,14 +29,84 @@ impl SshTarget {
     }
 }
 
+/// Per-step options resolved from CLI flags → `[harden]` config block →
+/// built-in defaults (in that precedence order). Stages 2 and 3 will read
+/// more fields from this; stage 1 only needs `new_user` / `ssh_port`.
+#[allow(dead_code)] // remaining fields are read by stages 2 and 3.
+#[derive(Clone, Debug)]
+pub(crate) struct Options {
+    pub new_user: String,
+    pub ssh_port: u16,
+    pub docker_install_url: String,
+    pub docker_rootless: bool,
+    pub swap_size_gb: u32,
+    pub journald_max_use: String,
+    pub timezone: String,
+    pub unattended_security_upgrades: bool,
+    pub fail2ban: bool,
+    pub mosh: bool,
+    pub sshd_ciphers: String,
+    pub sshd_kex: String,
+    pub sshd_macs: String,
+    pub extra_ufw_allow: Vec<String>,
+}
+
+/// Modern SSH algorithm pins, drops CBC ciphers and weak KEX/MACs.
+const DEFAULT_CIPHERS: &str =
+    "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr";
+const DEFAULT_KEX: &str =
+    "curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512";
+const DEFAULT_MACS: &str =
+    "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com";
+
+/// Resolve final options. CLI overrides win, then `[harden]` config block,
+/// then the built-in defaults documented in `dsc.example.toml`.
+pub(crate) fn resolve_options(
+    cli_new_user: Option<&str>,
+    cli_ssh_port: Option<u16>,
+    cfg: &HardenConfig,
+) -> Options {
+    Options {
+        new_user: cli_new_user
+            .map(str::to_string)
+            .or_else(|| cfg.new_user.clone())
+            .unwrap_or_else(|| "discourse".to_string()),
+        ssh_port: cli_ssh_port
+            .or_else(|| cfg.ssh_port.map(|p| p as u16))
+            .unwrap_or(2227),
+        docker_install_url: cfg
+            .docker_install_url
+            .clone()
+            .unwrap_or_else(|| "https://get.docker.com".to_string()),
+        docker_rootless: cfg.docker_rootless.unwrap_or(true),
+        swap_size_gb: cfg.swap_size_gb.unwrap_or(2),
+        journald_max_use: cfg
+            .journald_max_use
+            .clone()
+            .unwrap_or_else(|| "500M".to_string()),
+        timezone: cfg.timezone.clone().unwrap_or_else(|| "UTC".to_string()),
+        unattended_security_upgrades: cfg.unattended_security_upgrades.unwrap_or(true),
+        fail2ban: cfg.fail2ban.unwrap_or(true),
+        mosh: cfg.mosh.unwrap_or(false),
+        sshd_ciphers: cfg.sshd_ciphers.clone().unwrap_or_else(|| DEFAULT_CIPHERS.to_string()),
+        sshd_kex: cfg.sshd_kex.clone().unwrap_or_else(|| DEFAULT_KEX.to_string()),
+        sshd_macs: cfg.sshd_macs.clone().unwrap_or_else(|| DEFAULT_MACS.to_string()),
+        extra_ufw_allow: cfg.extra_ufw_allow.clone().unwrap_or_default(),
+    }
+}
+
 pub fn harden(
+    cfg: &HardenConfig,
     host: &str,
     ssh_user: &str,
-    new_user: &str,
-    _ssh_port: u16,
+    new_user: Option<&str>,
+    ssh_port: Option<u16>,
     pubkey_file: &Path,
     dry_run: bool,
 ) -> Result<()> {
+    let opts = resolve_options(new_user, ssh_port, cfg);
+    let new_user = opts.new_user.as_str();
+    let _ssh_port = opts.ssh_port;
     // Preflight: pubkey readable now, before we start SSH-ing around.
     let pubkey = fs::read_to_string(pubkey_file)
         .with_context(|| format!("reading {}", pubkey_file.display()))?
@@ -404,5 +475,50 @@ mod tests {
     #[test]
     fn disk_happy_at_40gb() {
         assert!(assert_enough_disk("40", false).is_ok());
+    }
+
+    #[test]
+    fn options_use_builtin_defaults_when_empty() {
+        let cfg = HardenConfig::default();
+        let opts = resolve_options(None, None, &cfg);
+        assert_eq!(opts.new_user, "discourse");
+        assert_eq!(opts.ssh_port, 2227);
+        assert_eq!(opts.docker_install_url, "https://get.docker.com");
+        assert_eq!(opts.swap_size_gb, 2);
+        assert_eq!(opts.timezone, "UTC");
+        assert!(opts.fail2ban);
+        assert!(opts.unattended_security_upgrades);
+        assert!(!opts.mosh);
+        assert_eq!(opts.journald_max_use, "500M");
+    }
+
+    #[test]
+    fn options_pick_up_config_block() {
+        let cfg = HardenConfig {
+            new_user: Some("ops".to_string()),
+            ssh_port: Some(2299),
+            mosh: Some(true),
+            swap_size_gb: Some(0),
+            ..HardenConfig::default()
+        };
+        let opts = resolve_options(None, None, &cfg);
+        assert_eq!(opts.new_user, "ops");
+        assert_eq!(opts.ssh_port, 2299);
+        assert!(opts.mosh);
+        assert_eq!(opts.swap_size_gb, 0);
+        // Unset fields still get built-in defaults.
+        assert_eq!(opts.timezone, "UTC");
+    }
+
+    #[test]
+    fn cli_flags_override_config_block() {
+        let cfg = HardenConfig {
+            new_user: Some("ops".to_string()),
+            ssh_port: Some(2299),
+            ..HardenConfig::default()
+        };
+        let opts = resolve_options(Some("custom"), Some(40022), &cfg);
+        assert_eq!(opts.new_user, "custom");
+        assert_eq!(opts.ssh_port, 40022);
     }
 }
