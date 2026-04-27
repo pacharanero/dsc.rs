@@ -1,6 +1,6 @@
 [package]
 name = "dsc-rs"
-version = "0.10.0"
+version = "0.10.1"
 edition = "2024"
 authors = ["Marcus Baw <marcus@bawmedical.co.uk>"]
 description = "Discourse CLI tool for managing multiple Discourse forums: track installs, run upgrades over SSH, manage emojis, sync topics and categories as Markdown, and more."
