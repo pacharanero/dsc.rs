@@ -199,6 +199,32 @@ pub enum Commands {
         #[arg(long)]
         pubkey_file: PathBuf,
     },
+    /// Community-health analytics — growth, activity, and health metrics
+    /// for a Discourse, with optional period-over-period comparison.
+    ///
+    /// See `spec/analytics.md` for the full spec. v1 ships every metric
+    /// that maps onto a single `/admin/reports/{id}.json` endpoint;
+    /// derivation-heavy ones (e.g. lost regulars, top-10 share) print
+    /// `— (n/i)` until follow-up implementation lands.
+    #[command(visible_alias = "stats")]
+    Analytics {
+        /// Discourse name.
+        discourse: String,
+        /// Window to report on. Same syntax as `dsc user activity --since`
+        /// (e.g. `7d`, `24h`, `1m`, ISO-8601). Default: 30d.
+        #[arg(long, short = 's', default_value = "30d")]
+        since: String,
+        /// Also fetch the immediately preceding window of equal length and
+        /// show a delta column.
+        #[arg(long, short = 'c')]
+        compare: bool,
+        /// Restrict output to one section.
+        #[arg(long, value_enum, default_value = "all")]
+        section: SectionArg,
+        /// Output format.
+        #[arg(long, short = 'f', value_enum, default_value = "text")]
+        format: AnalyticsFormat,
+    },
     /// Search topics on a Discourse.
     #[command(visible_alias = "s")]
     Search {
@@ -905,6 +931,33 @@ pub enum UserCommand {
         #[command(subcommand)]
         command: UserGroupsCommand,
     },
+}
+
+#[derive(ValueEnum, Clone, Copy)]
+pub enum SectionArg {
+    All,
+    Growth,
+    Activity,
+    Health,
+}
+
+#[derive(ValueEnum, Clone, Copy)]
+pub enum AnalyticsFormat {
+    /// Plain text (default).
+    Text,
+    /// Pretty JSON.
+    Json,
+    /// YAML.
+    #[value(alias = "yml")]
+    Yaml,
+    /// Markdown bullet list per section.
+    #[value(alias = "md")]
+    Markdown,
+    /// Markdown table per section.
+    #[value(alias = "md-table", name = "markdown-table")]
+    MarkdownTable,
+    /// CSV — one row per metric.
+    Csv,
 }
 
 #[derive(ValueEnum, Clone, Copy)]

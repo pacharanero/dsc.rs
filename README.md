@@ -109,6 +109,7 @@ dsc update myforum
   - [import](docs/import.md) — import installs from file or stdin
   - [update](docs/update.md) — run OS and Discourse updates over SSH
   - [search](docs/search.md) — search topics on a Discourse
+  - [analytics](docs/analytics.md) — community-health snapshot (growth, activity, health)
   - [upload](docs/upload.md) — upload a file and return its short URL
   - [emoji](docs/emoji.md) — upload and list custom emoji
   - [topic](docs/topic.md) — pull, push, and sync topics as Markdown

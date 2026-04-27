@@ -2,7 +2,17 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use dsc::cli::*;
 use dsc::commands;
+use dsc::commands::analytics::SectionFilter;
 use dsc::commands::user::{ActivityFormat, Role};
+
+fn map_section(s: SectionArg) -> SectionFilter {
+    match s {
+        SectionArg::All => SectionFilter::All,
+        SectionArg::Growth => SectionFilter::Growth,
+        SectionArg::Activity => SectionFilter::Activity,
+        SectionArg::Health => SectionFilter::Health,
+    }
+}
 use dsc::config::{load_config, resolve_default_config_path, save_config};
 
 fn map_role(role: RoleArg) -> Role {
@@ -594,6 +604,21 @@ fn main() -> Result<()> {
             query,
             format,
         } => commands::search::search(&config, &discourse, &query, format),
+
+        Commands::Analytics {
+            discourse,
+            since,
+            compare,
+            section,
+            format,
+        } => commands::analytics::analytics(
+            &config,
+            &discourse,
+            &since,
+            compare,
+            map_section(section),
+            format,
+        ),
 
         Commands::Upload {
             discourse,
