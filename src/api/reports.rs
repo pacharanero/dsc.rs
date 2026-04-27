@@ -10,68 +10,15 @@ use super::client::DiscourseClient;
 use super::error::http_error;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-/// One day-bucket from a report's `data` / `prev_data` array. `x` is an
-/// ISO-8601 date string (YYYY-MM-DD) for daily reports.
-///
-/// Discourse occasionally emits `y` as `false`, `null`, or a string for
-/// non-counter reports. We coerce all of those to `0.0` rather than
-/// failing the whole analytics run.
+/// One day-bucket from a flat (non-stacked) report's `data` array.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ReportPoint {
     #[serde(default)]
     pub x: String,
-    #[serde(default, deserialize_with = "deserialize_lenient_f64")]
+    #[serde(default)]
     pub y: f64,
-}
-
-fn deserialize_lenient_f64<'de, D>(de: D) -> Result<f64, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error as _;
-    let v = serde_json::Value::deserialize(de)?;
-    match v {
-        serde_json::Value::Number(n) => {
-            n.as_f64().ok_or_else(|| D::Error::custom("non-finite number"))
-        }
-        serde_json::Value::Bool(_) | serde_json::Value::Null => Ok(0.0),
-        serde_json::Value::String(s) => s.parse::<f64>().or(Ok(0.0)),
-        _ => Ok(0.0),
-    }
-}
-
-/// Discourse's `data` is normally an array of points but in rare degenerate
-/// cases (e.g. some `top_*` reports on freshly-installed sites) it shows
-/// up as `false` or `null`. Treat any non-array as an empty list.
-fn deserialize_lenient_points<'de, D>(de: D) -> Result<Vec<ReportPoint>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let v = serde_json::Value::deserialize(de)?;
-    match v {
-        serde_json::Value::Array(_) => {
-            serde_json::from_value(v).map_err(serde::de::Error::custom)
-        }
-        _ => Ok(Vec::new()),
-    }
-}
-
-/// Same idea for `prev_data`, except it's optional. Discourse emits
-/// `prev_data: false` when comparison data isn't available — coerce to None.
-fn deserialize_lenient_optional_points<'de, D>(
-    de: D,
-) -> Result<Option<Vec<ReportPoint>>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let v = serde_json::Value::deserialize(de)?;
-    match v {
-        serde_json::Value::Array(_) => {
-            serde_json::from_value(v).map(Some).map_err(serde::de::Error::custom)
-        }
-        _ => Ok(None),
-    }
 }
 
 /// Discourse's `average` emits as a number, `false`, or null depending on
@@ -93,14 +40,24 @@ where
 /// fields `dsc analytics` actually reads are deserialised — Discourse
 /// emits a lot more (axis labels, chart modes, descriptions) that we don't
 /// care about.
+///
+/// `data` and `prev_data` are kept as raw `serde_json::Value` because
+/// Discourse uses two different shapes:
+///
+/// 1. **Flat counter reports** (`signups`, `topics`, `posts`, `likes`,
+///    `flags`, `new_contributors`): `data: [{x: date, y: number}, ...]`.
+/// 2. **Stacked-chart reports** (`trust_level_growth`):
+///    `data: [{req: "tl1_reached", label: "...", data: [{x, y}, ...]}, ...]`.
+///
+/// `current_total()` walks both shapes and returns the right sum.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AdminReport {
     #[serde(default, alias = "type")]
     pub report_type: String,
-    #[serde(default, deserialize_with = "deserialize_lenient_points")]
-    pub data: Vec<ReportPoint>,
-    #[serde(default, deserialize_with = "deserialize_lenient_optional_points")]
-    pub prev_data: Option<Vec<ReportPoint>>,
+    #[serde(default)]
+    pub data: Value,
+    #[serde(default)]
+    pub prev_data: Option<Value>,
     #[serde(default)]
     pub start_date: Option<String>,
     #[serde(default)]
@@ -128,14 +85,48 @@ struct ReportEnvelope {
 }
 
 impl AdminReport {
-    /// Sum of `data[].y` — for count-per-day reports this is the window total.
+    /// Total for the current window.
+    ///
+    /// Walks the `data` value and sums every `y` it can find. Handles both
+    /// the flat counter shape (`[{x, y}, ...]`) and the stacked-chart shape
+    /// (`[{data: [{x, y}, ...]}, ...]`). Coerces non-numeric `y` (Discourse
+    /// occasionally emits `false`/null/string for empty cells) to 0.
     pub fn current_total(&self) -> f64 {
-        self.data.iter().map(|p| p.y).sum()
+        sum_data(&self.data)
     }
 
-    /// Sum of `prev_data[].y`. Returns `None` when prev_data is absent.
+    /// Total for the previous-window, when present.
     pub fn previous_total(&self) -> Option<f64> {
-        self.prev_data.as_ref().map(|d| d.iter().map(|p| p.y).sum())
+        self.prev_data.as_ref().map(sum_data)
+    }
+}
+
+fn sum_data(v: &Value) -> f64 {
+    match v {
+        Value::Array(items) => items
+            .iter()
+            .map(|item| {
+                // Stacked-chart wrapper: {req, label, color, data: [{x, y}, ...]}
+                // → recurse into the inner data array.
+                if let Some(inner) = item.get("data") {
+                    sum_data(inner)
+                } else if let Some(y) = item.get("y") {
+                    coerce_f64(y)
+                } else {
+                    0.0
+                }
+            })
+            .sum(),
+        _ => 0.0,
+    }
+}
+
+fn coerce_f64(v: &Value) -> f64 {
+    match v {
+        Value::Number(n) => n.as_f64().unwrap_or(0.0),
+        Value::String(s) => s.parse().unwrap_or(0.0),
+        Value::Bool(_) | Value::Null => 0.0,
+        _ => 0.0,
     }
 }
 
@@ -200,44 +191,73 @@ mod tests {
         assert!(!report_id_is_valid("topics; rm -rf"));
     }
 
+    fn parse_report(json: &str) -> AdminReport {
+        let envelope: serde_json::Value = serde_json::from_str(json).unwrap();
+        let report = envelope.get("report").cloned().unwrap_or(envelope);
+        serde_json::from_value(report).unwrap()
+    }
+
     #[test]
-    fn current_total_sums_data() {
-        let r = AdminReport {
-            report_type: "signups".to_string(),
-            data: vec![
-                ReportPoint { x: "2026-04-01".into(), y: 3.0 },
-                ReportPoint { x: "2026-04-02".into(), y: 5.0 },
-                ReportPoint { x: "2026-04-03".into(), y: 0.0 },
-            ],
-            prev_data: None,
-            start_date: None,
-            end_date: None,
-            prev_start_date: None,
-            prev_end_date: None,
-            average: None,
-            higher_is_better: None,
-        };
+    fn current_total_sums_flat_data() {
+        let r = parse_report(
+            r#"{
+              "type": "signups",
+              "data": [{"x":"2026-04-01","y":3},{"x":"2026-04-02","y":5},{"x":"2026-04-03","y":0}]
+            }"#,
+        );
         assert_eq!(r.current_total(), 8.0);
         assert_eq!(r.previous_total(), None);
     }
 
     #[test]
     fn previous_total_when_prev_data_present() {
-        let r = AdminReport {
-            report_type: "posts".to_string(),
-            data: vec![ReportPoint { x: "2026-04-01".into(), y: 10.0 }],
-            prev_data: Some(vec![
-                ReportPoint { x: "2026-03-01".into(), y: 4.0 },
-                ReportPoint { x: "2026-03-02".into(), y: 6.0 },
-            ]),
-            start_date: None,
-            end_date: None,
-            prev_start_date: None,
-            prev_end_date: None,
-            average: None,
-            higher_is_better: None,
-        };
+        let r = parse_report(
+            r#"{
+              "type": "posts",
+              "data": [{"x":"2026-04-01","y":10}],
+              "prev_data": [{"x":"2026-03-01","y":4},{"x":"2026-03-02","y":6}]
+            }"#,
+        );
         assert_eq!(r.current_total(), 10.0);
         assert_eq!(r.previous_total(), Some(10.0));
+    }
+
+    #[test]
+    fn current_total_handles_stacked_chart() {
+        // trust_level_growth shape: data is an array of series, each with
+        // its own inner `data: [{x, y}, ...]`. Total is sum across all.
+        let r = parse_report(
+            r#"{
+              "type": "trust_level_growth",
+              "data": [
+                {"req": "tl1_reached", "label": "TL1", "data": [{"x":"2026-04-01","y":2},{"x":"2026-04-02","y":3}]},
+                {"req": "tl2_reached", "label": "TL2", "data": [{"x":"2026-04-01","y":1}]},
+                {"req": "tl3_reached", "label": "TL3", "data": []},
+                {"req": "tl4_reached", "label": "TL4", "data": [{"x":"2026-04-02","y":1}]}
+              ]
+            }"#,
+        );
+        assert_eq!(r.current_total(), 7.0);
+    }
+
+    #[test]
+    fn current_total_zero_for_non_array_data() {
+        // Discourse occasionally emits `data: false` or `data: null` for
+        // genuinely-empty results (no permission, no data, etc.).
+        let r = parse_report(r#"{"type": "x", "data": false}"#);
+        assert_eq!(r.current_total(), 0.0);
+        let r = parse_report(r#"{"type": "x", "data": null}"#);
+        assert_eq!(r.current_total(), 0.0);
+    }
+
+    #[test]
+    fn current_total_coerces_non_numeric_y() {
+        let r = parse_report(
+            r#"{
+              "type": "x",
+              "data": [{"x":"2026-04-01","y":false},{"x":"2026-04-02","y":"5"},{"x":"2026-04-03","y":null}]
+            }"#,
+        );
+        assert_eq!(r.current_total(), 5.0);
     }
 }

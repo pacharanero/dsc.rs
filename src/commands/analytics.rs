@@ -239,12 +239,17 @@ fn build_growth(
 ) -> Result<Vec<Metric>> {
     let mut out = Vec::new();
 
-    // New contributors — defined as users whose FIRST EVER post lands in
-    // the window. Discourse's `signups` report counts user creation, not
-    // first-post: not a 1:1 substitute. Stub for v1.
+    // New contributors — Discourse's `Reports::NewContributors` is defined
+    // as `User.count_by_first_post(start, end)`, which is exactly the spec.
+    let nc = fetch_optional(client, "new_contributors", start, end)?;
     out.push(
         Metric::new("new contributors", "new_contributors", Direction::Up, Unit::Count)
-            .stub(),
+            .with_value(nc.as_ref().map(|r| r.current_total()))
+            .with_previous(if compare {
+                nc.as_ref().and_then(|r| r.previous_total())
+            } else {
+                None
+            }),
     );
 
     // Reactivated users — needs per-user post-history. Stub.
@@ -424,10 +429,10 @@ fn build_health(
             }),
     );
 
-    // Flag resolution time — Discourse exposes this as `flag_response_time`
-    // (median in hours). Naming may vary across Discourse versions; see
-    // queries.md.
-    let frt = fetch_optional(client, "flag_response_time", start, end)?;
+    // Flag resolution time — Discourse doesn't ship a dedicated report
+    // for this in current versions (verified against the Reports::*
+    // include list). Stubbed until we either find the right ID or
+    // derive it from `flags_status` / staff action logs.
     out.push(
         Metric::new(
             "flag resolution time",
@@ -435,7 +440,7 @@ fn build_health(
             Direction::Down,
             Unit::Hours,
         )
-        .with_value(frt.as_ref().and_then(|r| r.average)),
+        .stub(),
     );
 
     // Moderator action rate — `moderators_activity` total / posts, * 1000.
