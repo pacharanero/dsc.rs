@@ -1,63 +1,144 @@
 //! `dsc analytics` — community-health snapshot per `spec/analytics.md`.
 //!
-//! The metrics, sections, and output shape are defined in the spec; this
-//! file implements them. Where a metric maps directly onto a single
-//! `/admin/reports/{id}.json` endpoint we fetch and aggregate; where a
-//! metric needs cross-API derivation (e.g. "lost regulars" needs per-user
-//! post-history walks) we emit `null` / `—` for v1 with a clear note in
-//! the queries.md tracking file.
+//! Three modes share one data path:
+//!
+//! - **single window** (`--since 30d` alone): one column.
+//! - **compare** (`--since 30d --compare`): two columns (current, previous).
+//! - **snapshot** (`--snapshot`): N columns, default `24h,7d,30d,1y`.
+//!
+//! Internally every mode is "list of windows + a report cache". The cache
+//! is populated by spawning one thread per `(report_id, window)` pair so
+//! a snapshot of N=4 windows × 9 reports completes in roughly the time
+//! of the slowest single call rather than 36× sequential.
 
 use crate::api::{AdminReport, DiscourseClient};
 use crate::cli::AnalyticsFormat;
 use crate::commands::common::{ensure_api_credentials, select_discourse};
 use crate::config::Config;
 use crate::utils::parse_since_cutoff;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Datelike, Duration, Utc};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
-use std::io;
+use std::collections::HashMap;
+use std::io::{self, IsTerminal};
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 const SCHEMA_VERSION: u32 = 1;
 
+/// All the report IDs the analytics command might fetch. Listed once so
+/// the cache populator can fan out without us forgetting one.
+const REPORT_IDS: &[&str] = &[
+    "topics",
+    "posts",
+    "likes",
+    "flags",
+    "new_contributors",
+    "trust_level_growth",
+    "time_to_first_response",
+    "topics_with_no_response",
+    "moderators_activity",
+];
+
 // ---------------------------------------------------------------------------
-// Public entry point
+// Public entry points
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 pub fn analytics(
     config: &Config,
     discourse_name: &str,
     since: &str,
     compare: bool,
+    snapshot: bool,
+    periods: Option<&str>,
     section_filter: SectionFilter,
-    format: AnalyticsFormat,
+    mut format: AnalyticsFormat,
 ) -> Result<()> {
     let discourse = select_discourse(config, Some(discourse_name))?;
     ensure_api_credentials(discourse)?;
     let client = DiscourseClient::new(discourse)?;
-
     let now = Utc::now();
-    let cutoff = parse_since_cutoff(since)?;
-    let mut window = Window {
-        since: cutoff,
-        until: now,
-        label: since.to_string(),
-        clamped: false,
+
+    // Resolve windows per mode. Order matters: position 0 is the
+    // "primary" column (the one shown alone in single-window mode); the
+    // rest are comparison/snapshot columns in left-to-right reading order.
+    let windows = if snapshot {
+        let raw = periods.unwrap_or("24h,7d,30d,1y");
+        parse_periods(raw, now)?
+    } else if compare {
+        let cur = window_from_since(since, now)?;
+        let prev = previous_window_of(&cur);
+        vec![cur, prev]
+    } else {
+        vec![window_from_since(since, now)?]
     };
-    // Guard: if the user passed a future timestamp, swap so duration is positive.
-    if window.since > window.until {
-        std::mem::swap(&mut window.since, &mut window.until);
+
+    let column_headers: Vec<String> = if snapshot {
+        windows.iter().map(|w| w.label.clone()).collect()
+    } else if compare {
+        vec!["current".to_string(), "previous".to_string()]
+    } else {
+        vec!["value".to_string()]
+    };
+
+    // Auto-fall-through `table` → `text` on non-TTY stdout so cron-piped
+    // output stays parseable.
+    if matches!(format, AnalyticsFormat::Table) && !io::stdout().is_terminal() {
+        format = AnalyticsFormat::Text;
     }
 
+    let cache = populate_cache(&client, &windows)?;
     let report = build_report(
-        &client,
         discourse_name,
-        &window,
-        compare,
+        &windows,
+        &column_headers,
         section_filter,
-    )?;
-
+        snapshot,
+        &cache,
+    );
     render(&report, format)
+}
+
+// ---------------------------------------------------------------------------
+// Window helpers
+// ---------------------------------------------------------------------------
+
+fn window_from_since(since: &str, now: DateTime<Utc>) -> Result<Window> {
+    let cutoff = parse_since_cutoff(since)?;
+    let (start, end) = if cutoff <= now { (cutoff, now) } else { (now, cutoff) };
+    Ok(Window {
+        since: start,
+        until: end,
+        label: since.to_string(),
+        clamped: false,
+    })
+}
+
+fn previous_window_of(w: &Window) -> Window {
+    let len = w.duration();
+    Window {
+        since: w.since - len,
+        until: w.since,
+        label: w.label.clone(),
+        clamped: false,
+    }
+}
+
+fn parse_periods(raw: &str, now: DateTime<Utc>) -> Result<Vec<Window>> {
+    let mut out = Vec::new();
+    for piece in raw.split(',') {
+        let p = piece.trim();
+        if p.is_empty() {
+            continue;
+        }
+        out.push(window_from_since(p, now)?);
+    }
+    if out.is_empty() {
+        anyhow::bail!("--periods must contain at least one duration");
+    }
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -97,7 +178,6 @@ impl Window {
 enum Direction {
     Up,
     Down,
-    /// Movement is neither good nor bad — render the arrow grey.
     Neither,
 }
 
@@ -114,51 +194,39 @@ enum Unit {
 
 #[derive(Clone, Debug, Serialize)]
 struct Metric {
-    /// Label printed in text mode (e.g. "new contributors").
     label: String,
-    /// JSON / CSV key (e.g. "new_contributors").
     key: String,
-    /// Current-window value. `None` indicates "not yet implemented" or
-    /// "undefined for this window" (e.g. posts-per-topic when topics == 0).
-    current: Option<f64>,
-    /// Previous-window value, only set when `--compare` was passed AND a
-    /// value was obtainable.
-    previous: Option<f64>,
-    /// Pin the desirable direction so the renderer can colour the arrow.
+    /// One slot per column. `None` means the metric is genuinely
+    /// undefined for that window (e.g. zero-topic divisor); see
+    /// `not_implemented` for "we haven't built this yet" markers.
+    values: Vec<Option<f64>>,
     desirable: Direction,
     unit: Unit,
-    /// True when the value couldn't be computed because we haven't yet
-    /// implemented the derivation. Helps the renderer show `—` rather
-    /// than a misleading `0`.
     not_implemented: bool,
 }
 
 impl Metric {
-    fn new(label: &str, key: &str, desirable: Direction, unit: Unit) -> Self {
+    fn new(label: &str, key: &str, desirable: Direction, unit: Unit, n: usize) -> Self {
         Self {
             label: label.to_string(),
             key: key.to_string(),
-            current: None,
-            previous: None,
+            values: vec![None; n],
             desirable,
             unit,
             not_implemented: false,
         }
     }
-    fn with_value(mut self, v: Option<f64>) -> Self {
-        self.current = v;
-        self
-    }
-    fn with_previous(mut self, v: Option<f64>) -> Self {
-        self.previous = v;
+    fn with_values(mut self, v: Vec<Option<f64>>) -> Self {
+        self.values = v;
         self
     }
     fn stub(mut self) -> Self {
         self.not_implemented = true;
         self
     }
+    /// % delta from values[1] → values[0]. Used in compare mode.
     fn delta_pct(&self) -> Option<f64> {
-        match (self.current, self.previous) {
+        match (self.values.first().copied().flatten(), self.values.get(1).copied().flatten()) {
             (Some(c), Some(p)) if p != 0.0 => Some(((c - p) / p) * 100.0),
             _ => None,
         }
@@ -169,314 +237,278 @@ impl Metric {
 struct AnalyticsReport {
     schema: u32,
     discourse: String,
-    window: Window,
-    compare: Option<Window>,
+    snapshot: bool,
+    windows: Vec<Window>,
+    column_headers: Vec<String>,
     growth: Option<Vec<Metric>>,
     activity: Option<Vec<Metric>>,
     health: Option<Vec<Metric>>,
 }
 
 // ---------------------------------------------------------------------------
-// Report construction
+// Concurrent report cache
+// ---------------------------------------------------------------------------
+
+/// Maps `(report_id, window_index)` to an optional `AdminReport`. None
+/// means Discourse returned a tolerable error (404/403/500) and the
+/// metric should render as `—`.
+type ReportCache = HashMap<(String, usize), Option<AdminReport>>;
+
+/// Max in-flight HTTP requests at any moment. Above this, observation on
+/// dhi-discourse showed nginx 429s even for single-window mode. The
+/// cross-cutting 429 retry would catch them but slow the run dramatically;
+/// staying below the burst limit is faster and more polite. 4 is empirical.
+const ANALYTICS_PARALLELISM: usize = 4;
+
+fn populate_cache(client: &DiscourseClient, windows: &[Window]) -> Result<ReportCache> {
+    let cache: Arc<Mutex<ReportCache>> = Arc::new(Mutex::new(HashMap::new()));
+
+    // Build the full task list, then dispatch with a bounded worker pool.
+    // We could do "parallel-within-window, sequential-between-window" but
+    // that lets each window finish its slowest call before the next one
+    // can start — pointless idle time. A flat task queue keeps the workers
+    // saturated.
+    let tasks: Vec<(String, usize, String, String)> = windows
+        .iter()
+        .enumerate()
+        .flat_map(|(w_idx, window)| {
+            let start = window.iso_date_since();
+            let end = window.iso_date_until();
+            REPORT_IDS
+                .iter()
+                .map(move |id| (id.to_string(), w_idx, start.clone(), end.clone()))
+        })
+        .collect();
+    let queue = Arc::new(Mutex::new(tasks.into_iter()));
+
+    thread::scope(|scope| {
+        for _ in 0..ANALYTICS_PARALLELISM {
+            let client = client.clone();
+            let cache = cache.clone();
+            let queue = queue.clone();
+            scope.spawn(move || loop {
+                let next = { queue.lock().ok().and_then(|mut q| q.next()) };
+                let Some((id, w_idx, start, end)) = next else {
+                    break;
+                };
+                let value = fetch_optional(&client, &id, &start, &end);
+                if let Ok(mut guard) = cache.lock() {
+                    guard.insert((id, w_idx), value);
+                }
+            });
+        }
+    });
+
+    Ok(Arc::try_unwrap(cache)
+        .map_err(|_| anyhow::anyhow!("cache still has live references"))?
+        .into_inner()
+        .unwrap_or_default())
+}
+
+fn report_at<'a>(cache: &'a ReportCache, id: &str, w: usize) -> Option<&'a AdminReport> {
+    cache
+        .get(&(id.to_string(), w))
+        .and_then(|opt| opt.as_ref())
+}
+
+/// Per-window total for a single report. None when the report was
+/// missing OR Discourse returned no data.
+fn totals_for(cache: &ReportCache, id: &str, n_windows: usize) -> Vec<Option<f64>> {
+    (0..n_windows)
+        .map(|w| report_at(cache, id, w).map(|r: &AdminReport| r.current_total()))
+        .collect()
+}
+
+fn averages_for(cache: &ReportCache, id: &str, n_windows: usize) -> Vec<Option<f64>> {
+    (0..n_windows)
+        .map(|w| report_at(cache, id, w).and_then(|r: &AdminReport| r.average))
+        .collect()
+}
+
+fn ratio_per_window(num: &[Option<f64>], den: &[Option<f64>]) -> Vec<Option<f64>> {
+    num.iter()
+        .zip(den.iter())
+        .map(|(n, d)| match (n, d) {
+            (Some(n), Some(d)) if *d > 0.0 => Some(n / d),
+            _ => None,
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Section construction
 // ---------------------------------------------------------------------------
 
 fn build_report(
-    client: &DiscourseClient,
-    discourse_name: &str,
-    window: &Window,
-    compare: bool,
+    discourse: &str,
+    windows: &[Window],
+    column_headers: &[String],
     filter: SectionFilter,
-) -> Result<AnalyticsReport> {
-    let start = window.iso_date_since();
-    let end = window.iso_date_until();
-
-    let compare_window = if compare {
-        let len = window.duration();
-        Some(Window {
-            since: window.since - len,
-            until: window.since,
-            label: window.label.clone(),
-            clamped: false,
-        })
-    } else {
-        None
-    };
-
+    snapshot: bool,
+    cache: &ReportCache,
+) -> AnalyticsReport {
+    let n = windows.len();
     let growth = if matches!(filter, SectionFilter::All | SectionFilter::Growth) {
-        Some(build_growth(client, &start, &end, compare)?)
+        Some(build_growth(cache, n))
     } else {
         None
     };
-
     let activity = if matches!(filter, SectionFilter::All | SectionFilter::Activity) {
-        Some(build_activity(client, &start, &end, compare)?)
+        Some(build_activity(cache, n))
     } else {
         None
     };
-
     let health = if matches!(filter, SectionFilter::All | SectionFilter::Health) {
-        Some(build_health(client, &start, &end, compare)?)
+        Some(build_health(cache, n))
     } else {
         None
     };
-
-    Ok(AnalyticsReport {
+    AnalyticsReport {
         schema: SCHEMA_VERSION,
-        discourse: discourse_name.to_string(),
-        window: window.clone(),
-        compare: compare_window,
+        discourse: discourse.to_string(),
+        snapshot,
+        windows: windows.to_vec(),
+        column_headers: column_headers.to_vec(),
         growth,
         activity,
         health,
-    })
+    }
 }
 
-fn build_growth(
-    client: &DiscourseClient,
-    start: &str,
-    end: &str,
-    compare: bool,
-) -> Result<Vec<Metric>> {
+fn build_growth(cache: &ReportCache, n: usize) -> Vec<Metric> {
     let mut out = Vec::new();
 
-    // New contributors — Discourse's `Reports::NewContributors` is defined
-    // as `User.count_by_first_post(start, end)`, which is exactly the spec.
-    let nc = fetch_optional(client, "new_contributors", start, end)?;
     out.push(
-        Metric::new("new contributors", "new_contributors", Direction::Up, Unit::Count)
-            .with_value(nc.as_ref().map(|r| r.current_total()))
-            .with_previous(if compare {
-                nc.as_ref().and_then(|r| r.previous_total())
-            } else {
-                None
-            }),
+        Metric::new("new contributors", "new_contributors", Direction::Up, Unit::Count, n)
+            .with_values(totals_for(cache, "new_contributors", n)),
+    );
+    out.push(
+        Metric::new("reactivated users", "reactivated_users", Direction::Up, Unit::Count, n).stub(),
+    );
+    out.push(Metric::new("lost regulars", "lost_regulars", Direction::Down, Unit::Count, n).stub());
+    out.push(
+        Metric::new("net active change", "net_active_change", Direction::Up, Unit::Count, n).stub(),
+    );
+    out.push(
+        Metric::new("trust-level promotions", "trust_level_promotions", Direction::Up, Unit::Count, n)
+            .with_values(totals_for(cache, "trust_level_growth", n)),
     );
 
-    // Reactivated users — needs per-user post-history. Stub.
-    out.push(
-        Metric::new("reactivated users", "reactivated_users", Direction::Up, Unit::Count)
-            .stub(),
-    );
-
-    // Lost regulars — needs per-user post-history. Stub.
-    out.push(
-        Metric::new("lost regulars", "lost_regulars", Direction::Down, Unit::Count).stub(),
-    );
-
-    // Net active change — derivable once the three above land. Stub.
-    out.push(
-        Metric::new("net active change", "net_active_change", Direction::Up, Unit::Count)
-            .stub(),
-    );
-
-    // Trust-level promotions — `trust_level_growth` report, sum across
-    // TL0→TL1, TL1→TL2, TL2→TL3. The report is stacked by destination
-    // trust level; current_total sums all of them which matches our spec.
-    let tlg = fetch_optional(client, "trust_level_growth", start, end)?;
-    out.push(
-        Metric::new("trust-level promotions", "trust_level_promotions", Direction::Up, Unit::Count)
-            .with_value(tlg.as_ref().map(|r| r.current_total()))
-            .with_previous(if compare {
-                tlg.as_ref().and_then(|r| r.previous_total())
-            } else {
-                None
-            }),
-    );
-
-    Ok(out)
+    out
 }
 
-fn build_activity(
-    client: &DiscourseClient,
-    start: &str,
-    end: &str,
-    compare: bool,
-) -> Result<Vec<Metric>> {
+fn build_activity(cache: &ReportCache, n: usize) -> Vec<Metric> {
     let mut out = Vec::new();
 
-    let topics = fetch_optional(client, "topics", start, end)?;
-    let posts = fetch_optional(client, "posts", start, end)?;
-
-    let topics_cur = topics.as_ref().map(|r| r.current_total());
-    let topics_prev = if compare {
-        topics.as_ref().and_then(|r| r.previous_total())
-    } else {
-        None
-    };
-    let posts_cur = posts.as_ref().map(|r| r.current_total());
-    let posts_prev = if compare {
-        posts.as_ref().and_then(|r| r.previous_total())
-    } else {
-        None
-    };
+    let topics = totals_for(cache, "topics", n);
+    let posts = totals_for(cache, "posts", n);
+    let no_response = totals_for(cache, "topics_with_no_response", n);
 
     out.push(
-        Metric::new("topics created", "topics_created", Direction::Up, Unit::Count)
-            .with_value(topics_cur)
-            .with_previous(topics_prev),
+        Metric::new("topics created", "topics_created", Direction::Up, Unit::Count, n)
+            .with_values(topics.clone()),
     );
     out.push(
-        Metric::new("posts created", "posts_created", Direction::Up, Unit::Count)
-            .with_value(posts_cur)
-            .with_previous(posts_prev),
+        Metric::new("posts created", "posts_created", Direction::Up, Unit::Count, n)
+            .with_values(posts.clone()),
     );
-
-    // Posts per topic — derivable from the two counts. Avoid division by
-    // zero (window of zero topics → null / em dash, per spec).
-    let ppt_cur = ratio(posts_cur, topics_cur);
-    let ppt_prev = ratio(posts_prev, topics_prev);
     out.push(
-        Metric::new("posts per topic", "posts_per_topic", Direction::Up, Unit::Ratio)
-            .with_value(ppt_cur)
-            .with_previous(ppt_prev),
+        Metric::new("posts per topic", "posts_per_topic", Direction::Up, Unit::Ratio, n)
+            .with_values(ratio_per_window(&posts, &topics)),
     );
-
-    // Unique posters — needs per-user breakdown. Stub.
     out.push(
-        Metric::new("unique posters", "unique_posters", Direction::Up, Unit::Count).stub(),
+        Metric::new("unique posters", "unique_posters", Direction::Up, Unit::Count, n).stub(),
     );
-
-    // Top-10 share — needs per-user post counts. Stub.
     out.push(
-        Metric::new("top-10 share", "top_10_share", Direction::Down, Unit::Percent).stub(),
+        Metric::new("top-10 share", "top_10_share", Direction::Down, Unit::Percent, n).stub(),
     );
 
-    // Reply coverage — derivable from `topics` and `topics_with_no_response`.
-    // Coverage = (topics - no_response) / topics.
-    let no_response = fetch_optional(client, "topics_with_no_response", start, end)?;
-    let coverage_cur = match (topics_cur, no_response.as_ref().map(|r| r.current_total())) {
-        (Some(t), Some(n)) if t > 0.0 => Some(((t - n) / t) * 100.0),
-        _ => None,
-    };
-    let coverage_prev = match (topics_prev, no_response.as_ref().and_then(|r| r.previous_total())) {
-        (Some(t), Some(n)) if t > 0.0 => Some(((t - n) / t) * 100.0),
-        _ => None,
-    };
+    let coverage: Vec<Option<f64>> = topics
+        .iter()
+        .zip(no_response.iter())
+        .map(|(t, nr)| match (t, nr) {
+            (Some(t), Some(nr)) if *t > 0.0 => Some(((t - nr) / t) * 100.0),
+            _ => None,
+        })
+        .collect();
     out.push(
-        Metric::new("reply coverage", "reply_coverage", Direction::Up, Unit::Percent)
-            .with_value(coverage_cur)
-            .with_previous(coverage_prev),
+        Metric::new("reply coverage", "reply_coverage", Direction::Up, Unit::Percent, n)
+            .with_values(coverage),
     );
 
-    // Median time to first reply — `time_to_first_response` report.
-    // Discourse emits this as an `average` scalar in minutes (the `data`
-    // array gives daily averages we'd have to median, so the scalar is
-    // closer to "median across the whole window" semantically).
-    let ttfr = fetch_optional(client, "time_to_first_response", start, end)?;
     out.push(
         Metric::new(
             "median time to first reply",
             "median_time_to_first_reply",
             Direction::Down,
             Unit::Minutes,
+            n,
         )
-        .with_value(ttfr.as_ref().and_then(|r| r.average)),
+        .with_values(averages_for(cache, "time_to_first_response", n)),
     );
 
-    Ok(out)
+    out
 }
 
-fn build_health(
-    client: &DiscourseClient,
-    start: &str,
-    end: &str,
-    compare: bool,
-) -> Result<Vec<Metric>> {
+fn build_health(cache: &ReportCache, n: usize) -> Vec<Metric> {
     let mut out = Vec::new();
+    let likes = totals_for(cache, "likes", n);
+    let posts = totals_for(cache, "posts", n);
+    let mods = totals_for(cache, "moderators_activity", n);
 
-    let likes = fetch_optional(client, "likes", start, end)?;
-    let posts = fetch_optional(client, "posts", start, end)?;
-
-    // Likes per post — likes / posts.
-    let lpp_cur = ratio(
-        likes.as_ref().map(|r| r.current_total()),
-        posts.as_ref().map(|r| r.current_total()),
-    );
-    let lpp_prev = if compare {
-        ratio(
-            likes.as_ref().and_then(|r| r.previous_total()),
-            posts.as_ref().and_then(|r| r.previous_total()),
-        )
-    } else {
-        None
-    };
     out.push(
-        Metric::new("likes per post", "likes_per_post", Direction::Up, Unit::Ratio)
-            .with_value(lpp_cur)
-            .with_previous(lpp_prev),
+        Metric::new("likes per post", "likes_per_post", Direction::Up, Unit::Ratio, n)
+            .with_values(ratio_per_window(&likes, &posts)),
     );
-
-    // Returning poster rate — needs per-user comparison across windows. Stub.
     out.push(
         Metric::new(
             "returning poster rate",
             "returning_poster_rate",
             Direction::Up,
             Unit::Percent,
+            n,
         )
         .stub(),
     );
-
-    // Flags raised — `flags` report counts user-raised flags by default.
-    let flags = fetch_optional(client, "flags", start, end)?;
     out.push(
-        Metric::new("flags raised", "flags_raised", Direction::Down, Unit::Count)
-            .with_value(flags.as_ref().map(|r| r.current_total()))
-            .with_previous(if compare {
-                flags.as_ref().and_then(|r| r.previous_total())
-            } else {
-                None
-            }),
+        Metric::new("flags raised", "flags_raised", Direction::Down, Unit::Count, n)
+            .with_values(totals_for(cache, "flags", n)),
     );
-
-    // Flag resolution time — Discourse doesn't ship a dedicated report
-    // for this in current versions (verified against the Reports::*
-    // include list). Stubbed until we either find the right ID or
-    // derive it from `flags_status` / staff action logs.
     out.push(
         Metric::new(
             "flag resolution time",
             "flag_resolution_time",
             Direction::Down,
             Unit::Hours,
+            n,
         )
         .stub(),
     );
 
-    // Moderator action rate — `moderators_activity` total / posts, * 1000.
-    // The `moderators_activity` report sums staff actions per day; pairing
-    // with the `posts` report gives the per-1k normalisation the spec asks
-    // for.
-    let mods = fetch_optional(client, "moderators_activity", start, end)?;
-    let mar_cur = match (mods.as_ref().map(|r| r.current_total()), posts.as_ref().map(|r| r.current_total())) {
-        (Some(m), Some(p)) if p > 0.0 => Some((m / p) * 1000.0),
-        _ => None,
-    };
-    let mar_prev = match (
-        mods.as_ref().and_then(|r| r.previous_total()),
-        posts.as_ref().and_then(|r| r.previous_total()),
-    ) {
-        (Some(m), Some(p)) if p > 0.0 => Some((m / p) * 1000.0),
-        _ => None,
-    };
+    let mar: Vec<Option<f64>> = mods
+        .iter()
+        .zip(posts.iter())
+        .map(|(m, p)| match (m, p) {
+            (Some(m), Some(p)) if *p > 0.0 => Some((m / p) * 1000.0),
+            _ => None,
+        })
+        .collect();
     out.push(
         Metric::new(
             "moderator action rate",
             "moderator_action_rate",
             Direction::Neither,
             Unit::PerThousandPosts,
+            n,
         )
-        .with_value(mar_cur)
-        .with_previous(mar_prev),
+        .with_values(mar),
     );
-
-    // Solo-thread rate — needs per-topic reply count walks. Stub.
     out.push(
-        Metric::new("solo-thread rate", "solo_thread_rate", Direction::Down, Unit::Percent)
+        Metric::new("solo-thread rate", "solo_thread_rate", Direction::Down, Unit::Percent, n)
             .stub(),
     );
 
-    Ok(out)
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -486,6 +518,7 @@ fn build_health(
 fn render(report: &AnalyticsReport, format: AnalyticsFormat) -> Result<()> {
     match format {
         AnalyticsFormat::Text => render_text(report),
+        AnalyticsFormat::Table => render_table(report),
         AnalyticsFormat::Json => render_json(report),
         AnalyticsFormat::Yaml => render_yaml(report),
         AnalyticsFormat::Markdown => render_markdown(report, false),
@@ -495,18 +528,8 @@ fn render(report: &AnalyticsReport, format: AnalyticsFormat) -> Result<()> {
 }
 
 fn render_text(report: &AnalyticsReport) -> Result<()> {
-    println!(
-        "analytics for {} — {} ({} → {})",
-        report.discourse,
-        report.window.label,
-        report.window.iso_date_since(),
-        report.window.iso_date_until()
-    );
-    if report.window.clamped {
-        println!("(window clamped — install is younger than --since)");
-    }
-    let compare = report.compare.is_some();
-
+    print_header_text(report);
+    let compare_mode = !report.snapshot && report.column_headers.len() == 2;
     for (name, metrics) in iter_sections(report) {
         println!();
         println!("{}", name);
@@ -516,82 +539,142 @@ fn render_text(report: &AnalyticsReport) -> Result<()> {
             .max()
             .unwrap_or(0)
             .max(20);
-        let value_w = metrics
-            .iter()
-            .flat_map(|m| {
-                [
-                    visual_width(&format_value(m.current, m.unit, m.not_implemented)),
-                    visual_width(&format_value(m.previous, m.unit, m.not_implemented)),
-                ]
-            })
-            .max()
-            .unwrap_or(0)
-            .max(8);
+        let cols = report.column_headers.len();
+        let val_w = column_widths(metrics, cols);
         for m in metrics {
-            let cur = format_value(m.current, m.unit, m.not_implemented);
-            let line = if compare {
-                let prev = format_value(m.previous, m.unit, m.not_implemented);
-                let arrow = arrow_for(m);
+            print!("  {}", pad_right(&m.label, label_w));
+            for c in 0..cols {
+                let s = format_value(m.values.get(c).copied().flatten(), m.unit, m.not_implemented);
+                print!("  {}", right_align(&s, val_w[c]));
+            }
+            if compare_mode {
                 let pct = m
                     .delta_pct()
                     .map(|p| format!("({:+.0}%)", p))
                     .unwrap_or_default();
-                format!(
-                    "  {:<lw$}  {}  {} {}  {}",
-                    pad_right(&m.label, label_w),
-                    right_align(&cur, value_w),
-                    arrow,
-                    right_align(&prev, value_w),
-                    pct,
-                    lw = label_w
-                )
-            } else {
-                format!(
-                    "  {}  {}",
-                    pad_right(&m.label, label_w),
-                    right_align(&cur, value_w),
-                )
-            };
-            println!("{}", line);
+                print!("  {}", pct);
+            }
+            println!();
         }
     }
     Ok(())
 }
 
-fn pad_right(s: &str, width: usize) -> String {
-    let w = visual_width(s);
-    if w >= width {
-        s.to_string()
+fn render_table(report: &AnalyticsReport) -> Result<()> {
+    print_header_text(report);
+    let cols = report.column_headers.len();
+    let compare_mode = !report.snapshot && cols == 2;
+
+    for (name, metrics) in iter_sections(report) {
+        println!();
+        println!("{}", name);
+
+        let label_w = metrics
+            .iter()
+            .map(|m| m.label.chars().count())
+            .max()
+            .unwrap_or(0)
+            .max(6)
+            .max("metric".len());
+        let mut col_w = column_widths(metrics, cols);
+        // Headers may be wider than any cell.
+        for (i, h) in report.column_headers.iter().enumerate() {
+            let hw = h.chars().count();
+            if hw > col_w[i] {
+                col_w[i] = hw;
+            }
+        }
+        let pct_w = if compare_mode { 7 } else { 0 };
+
+        // Top border
+        let mut widths: Vec<usize> = std::iter::once(label_w).chain(col_w.iter().copied()).collect();
+        if compare_mode {
+            widths.push(pct_w);
+        }
+        println!("{}", border_line('┌', '┬', '┐', &widths));
+
+        // Header row
+        print!("│ {} ", pad_right("metric", label_w));
+        for (i, h) in report.column_headers.iter().enumerate() {
+            print!("│ {} ", center(h, col_w[i]));
+        }
+        if compare_mode {
+            print!("│ {} ", center("Δ", pct_w));
+        }
+        println!("│");
+
+        // Header separator
+        println!("{}", border_line('├', '┼', '┤', &widths));
+
+        for m in metrics {
+            print!("│ {} ", pad_right(&m.label, label_w));
+            for c in 0..cols {
+                let s = format_value(m.values.get(c).copied().flatten(), m.unit, m.not_implemented);
+                print!("│ {} ", right_align(&s, col_w[c]));
+            }
+            if compare_mode {
+                let pct = m
+                    .delta_pct()
+                    .map(|p| format!("{:+.0}%", p))
+                    .unwrap_or_else(|| "—".to_string());
+                print!("│ {} ", right_align(&pct, pct_w));
+            }
+            println!("│");
+        }
+
+        println!("{}", border_line('└', '┴', '┘', &widths));
+    }
+    Ok(())
+}
+
+fn print_header_text(report: &AnalyticsReport) {
+    if report.snapshot {
+        let now = Utc::now();
+        println!(
+            "analytics for {} — snapshot at {} UTC",
+            report.discourse,
+            now.format("%Y-%m-%d %H:%M")
+        );
     } else {
-        format!("{}{}", s, " ".repeat(width - w))
+        let w = &report.windows[0];
+        println!(
+            "analytics for {} — {} ({} → {})",
+            report.discourse,
+            w.label,
+            w.iso_date_since(),
+            w.iso_date_until()
+        );
+        if w.clamped {
+            println!("(window clamped — install is younger than --since)");
+        }
     }
 }
 
 fn render_json(report: &AnalyticsReport) -> Result<()> {
-    let value = report_to_json(report);
-    println!("{}", serde_json::to_string_pretty(&value)?);
+    println!("{}", serde_json::to_string_pretty(&report_to_json(report))?);
     Ok(())
 }
 
 fn render_yaml(report: &AnalyticsReport) -> Result<()> {
-    let value = report_to_json(report);
-    println!("{}", serde_yaml::to_string(&value)?);
+    println!("{}", serde_yaml::to_string(&report_to_json(report))?);
     Ok(())
 }
 
 fn render_markdown(report: &AnalyticsReport, table: bool) -> Result<()> {
-    let compare = report.compare.is_some();
+    let cols = report.column_headers.len();
+    let compare_mode = !report.snapshot && cols == 2;
     println!("# analytics for {}", report.discourse);
     println!();
-    println!(
-        "Window: **{}** ({} → {})",
-        report.window.label,
-        report.window.iso_date_since(),
-        report.window.iso_date_until()
-    );
-    if report.window.clamped {
-        println!();
-        println!("> Window clamped — install is younger than `--since`.");
+    if report.snapshot {
+        println!("Snapshot at **{}**", Utc::now().format("%Y-%m-%d %H:%M UTC"));
+    } else {
+        let w = &report.windows[0];
+        println!(
+            "Window: **{}** ({} → {})",
+            w.label,
+            w.iso_date_since(),
+            w.iso_date_until()
+        );
     }
 
     for (name, metrics) in iter_sections(report) {
@@ -599,42 +682,57 @@ fn render_markdown(report: &AnalyticsReport, table: bool) -> Result<()> {
         println!("## {}", name);
         println!();
         if table {
-            if compare {
-                println!("| metric | current | previous | Δ |");
-                println!("| --- | ---: | ---: | ---: |");
-                for m in metrics {
-                    let cur = format_value(m.current, m.unit, m.not_implemented);
-                    let prev = format_value(m.previous, m.unit, m.not_implemented);
+            print!("| metric |");
+            for h in &report.column_headers {
+                print!(" {} |", h);
+            }
+            if compare_mode {
+                print!(" Δ |");
+            }
+            println!();
+            print!("| --- |");
+            for _ in 0..cols {
+                print!(" ---: |");
+            }
+            if compare_mode {
+                print!(" ---: |");
+            }
+            println!();
+            for m in metrics {
+                print!("| {} |", m.label);
+                for c in 0..cols {
+                    let s = format_value(m.values.get(c).copied().flatten(), m.unit, m.not_implemented);
+                    print!(" {} |", s);
+                }
+                if compare_mode {
                     let pct = m
                         .delta_pct()
                         .map(|p| format!("{:+.0}%", p))
                         .unwrap_or_else(|| "—".to_string());
-                    println!("| {} | {} | {} | {} |", m.label, cur, prev, pct);
+                    print!(" {} |", pct);
                 }
-            } else {
-                println!("| metric | value |");
-                println!("| --- | ---: |");
-                for m in metrics {
-                    println!(
-                        "| {} | {} |",
-                        m.label,
-                        format_value(m.current, m.unit, m.not_implemented)
-                    );
-                }
+                println!();
             }
         } else {
             for m in metrics {
-                let cur = format_value(m.current, m.unit, m.not_implemented);
-                if compare {
-                    let prev = format_value(m.previous, m.unit, m.not_implemented);
-                    let pct = m
-                        .delta_pct()
-                        .map(|p| format!(" (`{:+.0}%`)", p))
-                        .unwrap_or_default();
-                    println!("- **{}** — {} (prev: {}){}", m.label, cur, prev, pct);
-                } else {
-                    println!("- **{}** — {}", m.label, cur);
+                print!("- **{}** —", m.label);
+                for (i, h) in report.column_headers.iter().enumerate() {
+                    let s = format_value(m.values.get(i).copied().flatten(), m.unit, m.not_implemented);
+                    if cols == 1 {
+                        print!(" {}", s);
+                    } else {
+                        print!(" {}: {}", h, s);
+                        if i + 1 < cols {
+                            print!(",");
+                        }
+                    }
                 }
+                if compare_mode {
+                    if let Some(p) = m.delta_pct() {
+                        print!(" (`{:+.0}%`)", p);
+                    }
+                }
+                println!();
             }
         }
     }
@@ -643,37 +741,38 @@ fn render_markdown(report: &AnalyticsReport, table: bool) -> Result<()> {
 
 fn render_csv(report: &AnalyticsReport) -> Result<()> {
     let mut writer = csv::Writer::from_writer(io::stdout());
-    writer.write_record([
-        "section",
-        "metric",
-        "current",
-        "previous",
-        "delta",
-        "delta_pct",
-        "desirable_direction",
-        "unit",
-    ])?;
+    let mut header: Vec<String> = vec!["section".into(), "metric".into()];
+    for h in &report.column_headers {
+        header.push(h.clone());
+    }
+    header.push("desirable_direction".into());
+    header.push("unit".into());
+    writer.write_record(&header)?;
+
+    let cols = report.column_headers.len();
     for (name, metrics) in iter_sections(report) {
         for m in metrics {
-            let cur = m.current.map(|v| format!("{}", v)).unwrap_or_default();
-            let prev = m.previous.map(|v| format!("{}", v)).unwrap_or_default();
-            let delta = match (m.current, m.previous) {
-                (Some(c), Some(p)) => format!("{}", c - p),
-                _ => String::new(),
-            };
-            let pct = m
-                .delta_pct()
-                .map(|p| format!("{:.2}", p))
-                .unwrap_or_default();
-            let direction = match m.desirable {
-                Direction::Up => "up",
-                Direction::Down => "down",
-                Direction::Neither => "neither",
-            };
-            let unit = unit_str(m.unit);
-            writer.write_record([
-                name, &m.label, &cur, &prev, &delta, &pct, direction, unit,
-            ])?;
+            let mut row: Vec<String> = vec![name.into(), m.label.clone()];
+            for c in 0..cols {
+                row.push(
+                    m.values
+                        .get(c)
+                        .copied()
+                        .flatten()
+                        .map(|v| format!("{}", v))
+                        .unwrap_or_default(),
+                );
+            }
+            row.push(
+                match m.desirable {
+                    Direction::Up => "up",
+                    Direction::Down => "down",
+                    Direction::Neither => "neither",
+                }
+                .into(),
+            );
+            row.push(unit_str(m.unit).into());
+            writer.write_record(&row)?;
         }
     }
     writer.flush()?;
@@ -681,7 +780,7 @@ fn render_csv(report: &AnalyticsReport) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Render helpers
 // ---------------------------------------------------------------------------
 
 fn iter_sections(report: &AnalyticsReport) -> Vec<(&'static str, &[Metric])> {
@@ -703,45 +802,89 @@ fn fetch_optional(
     report_id: &str,
     start: &str,
     end: &str,
-) -> Result<Option<AdminReport>> {
-    // We tolerate "report not found" errors here — Discourse occasionally
-    // renames or removes report ids across versions; we'd rather render
-    // the rest of the dashboard than fail the whole command.
+) -> Option<AdminReport> {
     match client.fetch_admin_report(report_id, start, end) {
-        Ok(r) => Ok(Some(r)),
+        Ok(r) => Some(r),
         Err(err) => {
             let msg = err.to_string();
-            // Tolerate the report being missing (404), forbidden for the
-            // current key (403), or breaking server-side (500 — Discourse
-            // throws when a report has no data, no permission for the
-            // category filter, etc.). All of these cases get rendered as
-            // null/em-dash rather than failing the whole command.
+            // Tolerate per-report 404/403/500. The cache slot stays None
+            // and the metric renders as `—`.
             let known_missing = msg.contains(" 404 ")
                 || msg.contains(" 403 ")
                 || msg.contains(" 500 ")
                 || msg.contains("not found");
             if known_missing {
-                eprintln!(
-                    "[analytics] note: report '{}' not available on this Discourse — metric will render as `—`",
-                    report_id
-                );
-                Ok(None)
+                None
             } else {
-                Err(err).with_context(|| format!("fetching report {}", report_id))
+                eprintln!("[analytics] warning fetching report '{}': {}", report_id, err);
+                None
             }
         }
     }
 }
 
-fn ratio(num: Option<f64>, den: Option<f64>) -> Option<f64> {
-    match (num, den) {
-        (Some(n), Some(d)) if d > 0.0 => Some(n / d),
-        _ => None,
+fn column_widths(metrics: &[Metric], cols: usize) -> Vec<usize> {
+    (0..cols)
+        .map(|c| {
+            metrics
+                .iter()
+                .map(|m| {
+                    visual_width(&format_value(
+                        m.values.get(c).copied().flatten(),
+                        m.unit,
+                        m.not_implemented,
+                    ))
+                })
+                .max()
+                .unwrap_or(0)
+                .max(6)
+        })
+        .collect()
+}
+
+fn visual_width(s: &str) -> usize {
+    s.chars().count()
+}
+
+fn pad_right(s: &str, width: usize) -> String {
+    let w = visual_width(s);
+    if w >= width {
+        s.to_string()
+    } else {
+        format!("{}{}", s, " ".repeat(width - w))
     }
 }
 
-fn format_yyyy_mm_dd(d: &DateTime<Utc>) -> String {
-    format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day())
+fn right_align(s: &str, width: usize) -> String {
+    let w = visual_width(s);
+    if w >= width {
+        s.to_string()
+    } else {
+        format!("{}{}", " ".repeat(width - w), s)
+    }
+}
+
+fn center(s: &str, width: usize) -> String {
+    let w = visual_width(s);
+    if w >= width {
+        return s.to_string();
+    }
+    let total = width - w;
+    let left = total / 2;
+    let right = total - left;
+    format!("{}{}{}", " ".repeat(left), s, " ".repeat(right))
+}
+
+fn border_line(start: char, mid: char, end: char, widths: &[usize]) -> String {
+    let mut out = String::new();
+    out.push(start);
+    for (i, w) in widths.iter().enumerate() {
+        for _ in 0..(*w + 2) {
+            out.push('─');
+        }
+        out.push(if i + 1 == widths.len() { end } else { mid });
+    }
+    out
 }
 
 fn unit_str(u: Unit) -> &'static str {
@@ -759,36 +902,39 @@ fn format_value(v: Option<f64>, unit: Unit, not_impl: bool) -> String {
     if not_impl {
         return "— (n/i)".to_string();
     }
-    // Normalise negative-zero so display never prints "-0.0".
     let v = v.map(|x| if x == 0.0 { 0.0 } else { x });
     match (v, unit) {
         (None, _) => "—".to_string(),
-        (Some(x), Unit::Count) => format!("{}", x as i64),
+        (Some(x), Unit::Count) => format_count(x),
         (Some(x), Unit::Percent) => format!("{:.0}%", x),
         (Some(x), Unit::Minutes) => format_minutes(x),
         (Some(x), Unit::Hours) => format!("{:.1}h", x),
         (Some(x), Unit::Ratio) => format!("{:.1}", x),
-        (Some(x), Unit::PerThousandPosts) => format!("{:.1} / 1k posts", x),
+        (Some(x), Unit::PerThousandPosts) => format!("{:.1} / 1k", x),
     }
 }
 
-/// Visible width for a string composed mostly of ASCII + occasional
-/// em-dashes / arrows. Rust's `{:>N}` formatter counts bytes, which
-/// breaks alignment for our `—` (3 bytes) and arrows (3 bytes each).
-/// This is a deliberate cheap approximation: every char is one column,
-/// which is correct for everything we print here.
-fn visual_width(s: &str) -> usize {
-    s.chars().count()
-}
-
-/// Right-pad a string with spaces to the given visual width.
-fn right_align(s: &str, width: usize) -> String {
-    let w = visual_width(s);
-    if w >= width {
-        s.to_string()
-    } else {
-        format!("{}{}", " ".repeat(width - w), s)
+/// Integer count with thousand separators (commas) for readability.
+fn format_count(x: f64) -> String {
+    let n = x as i64;
+    let neg = n < 0;
+    let digits = n.unsigned_abs().to_string();
+    // Walk the digit string from the right, inserting a comma every 3
+    // characters except at the very start.
+    let bytes: Vec<u8> = digits.into_bytes();
+    let mut out = String::with_capacity(bytes.len() + bytes.len() / 3);
+    let len = bytes.len();
+    for (i, b) in bytes.iter().enumerate() {
+        let from_right = len - i;
+        if i > 0 && from_right % 3 == 0 {
+            out.push(',');
+        }
+        out.push(*b as char);
     }
+    if neg {
+        out.insert(0, '-');
+    }
+    out
 }
 
 fn format_minutes(x: f64) -> String {
@@ -800,59 +946,50 @@ fn format_minutes(x: f64) -> String {
     }
 }
 
-fn arrow_for(m: &Metric) -> &'static str {
-    let (Some(c), Some(p)) = (m.current, m.previous) else {
-        return " ";
-    };
-    if c > p {
-        "↑"
-    } else if c < p {
-        "↓"
-    } else {
-        "•"
-    }
+fn format_yyyy_mm_dd(d: &DateTime<Utc>) -> String {
+    format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day())
 }
+
+// ---------------------------------------------------------------------------
+// JSON serialisation
+// ---------------------------------------------------------------------------
 
 fn report_to_json(report: &AnalyticsReport) -> Value {
     let mut top = Map::new();
     top.insert("schema".to_string(), json!(report.schema));
     top.insert("discourse".to_string(), json!(report.discourse));
+    top.insert("snapshot".to_string(), json!(report.snapshot));
     top.insert(
-        "window".to_string(),
-        json!({
-            "since": report.window.since.to_rfc3339(),
-            "until": report.window.until.to_rfc3339(),
-            "label": report.window.label,
-            "clamped": report.window.clamped,
-        }),
+        "windows".to_string(),
+        Value::Array(
+            report
+                .windows
+                .iter()
+                .map(|w| {
+                    json!({
+                        "label": w.label,
+                        "since": w.since.to_rfc3339(),
+                        "until": w.until.to_rfc3339(),
+                    })
+                })
+                .collect(),
+        ),
     );
-    if let Some(c) = &report.compare {
-        top.insert(
-            "compare".to_string(),
-            json!({
-                "since": c.since.to_rfc3339(),
-                "until": c.until.to_rfc3339(),
-            }),
-        );
-    }
     for (name, metrics) in iter_sections(report) {
-        top.insert(name.to_string(), section_to_json(metrics));
+        top.insert(name.to_string(), section_to_json(metrics, &report.column_headers));
     }
     Value::Object(top)
 }
 
-fn section_to_json(metrics: &[Metric]) -> Value {
+fn section_to_json(metrics: &[Metric], headers: &[String]) -> Value {
     let mut out = Map::new();
     for m in metrics {
         let mut entry = Map::new();
-        entry.insert("current".to_string(), float_or_null(m.current));
-        entry.insert("previous".to_string(), float_or_null(m.previous));
-        if let Some(p) = m.delta_pct() {
-            entry.insert(
-                "delta_pct".to_string(),
-                json!((p * 10.0).round() / 10.0),
-            );
+        let mut values = Map::new();
+        for (i, h) in headers.iter().enumerate() {
+            values.insert(h.clone(), float_or_null(m.values.get(i).copied().flatten()));
         }
+        entry.insert("values".to_string(), Value::Object(values));
         entry.insert(
             "desirable".to_string(),
             json!(match m.desirable {
@@ -887,51 +1024,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn metric_delta_pct_handles_zero_previous() {
-        let m = Metric::new("x", "x", Direction::Up, Unit::Count)
-            .with_value(Some(10.0))
-            .with_previous(Some(0.0));
-        assert!(m.delta_pct().is_none());
-    }
-
-    #[test]
-    fn metric_delta_pct_handles_negative_change() {
-        let m = Metric::new("x", "x", Direction::Up, Unit::Count)
-            .with_value(Some(80.0))
-            .with_previous(Some(100.0));
+    fn metric_delta_pct_works_on_compare_layout() {
+        let m = Metric::new("x", "x", Direction::Up, Unit::Count, 2)
+            .with_values(vec![Some(80.0), Some(100.0)]);
         assert_eq!(m.delta_pct(), Some(-20.0));
     }
 
     #[test]
-    fn metric_stub_renders_em_dash() {
-        let m = Metric::new("x", "x", Direction::Up, Unit::Count).stub();
-        assert_eq!(format_value(m.current, m.unit, m.not_implemented), "— (n/i)");
+    fn metric_delta_pct_none_when_previous_zero() {
+        let m = Metric::new("x", "x", Direction::Up, Unit::Count, 2)
+            .with_values(vec![Some(10.0), Some(0.0)]);
+        assert!(m.delta_pct().is_none());
     }
 
     #[test]
-    fn ratio_is_none_when_denominator_zero() {
-        assert!(ratio(Some(10.0), Some(0.0)).is_none());
-        assert!(ratio(Some(10.0), None).is_none());
-        assert_eq!(ratio(Some(20.0), Some(4.0)), Some(5.0));
+    fn metric_delta_pct_none_for_single_window() {
+        let m = Metric::new("x", "x", Direction::Up, Unit::Count, 1)
+            .with_values(vec![Some(10.0)]);
+        assert!(m.delta_pct().is_none());
     }
 
     #[test]
-    fn arrow_reflects_direction_only() {
-        let mut m = Metric::new("x", "x", Direction::Up, Unit::Count);
-        m.current = Some(10.0);
-        m.previous = Some(5.0);
-        assert_eq!(arrow_for(&m), "↑");
-        m.current = Some(5.0);
-        m.previous = Some(10.0);
-        assert_eq!(arrow_for(&m), "↓");
-        m.current = Some(5.0);
-        m.previous = Some(5.0);
-        assert_eq!(arrow_for(&m), "•");
+    fn ratio_per_window_handles_zero_and_missing() {
+        let n = vec![Some(10.0), Some(20.0), None];
+        let d = vec![Some(2.0), Some(0.0), Some(5.0)];
+        let r = ratio_per_window(&n, &d);
+        assert_eq!(r, vec![Some(5.0), None, None]);
     }
 
     #[test]
     fn format_value_em_dash_for_none() {
         assert_eq!(format_value(None, Unit::Count, false), "—");
+        assert_eq!(format_value(Some(42.0), Unit::Count, true), "— (n/i)");
+    }
+
+    #[test]
+    fn format_count_inserts_thousand_separators() {
+        assert_eq!(format_count(0.0), "0");
+        assert_eq!(format_count(42.0), "42");
+        assert_eq!(format_count(1_234.0), "1,234");
+        assert_eq!(format_count(12_345.0), "12,345");
+        assert_eq!(format_count(1_234_567.0), "1,234,567");
+        assert_eq!(format_count(-1_500.0), "-1,500");
     }
 
     #[test]
@@ -941,18 +1075,44 @@ mod tests {
     }
 
     #[test]
-    fn format_value_handles_units() {
-        assert_eq!(format_value(Some(42.0), Unit::Count, false), "42");
-        assert_eq!(format_value(Some(35.0), Unit::Percent, false), "35%");
-        assert_eq!(format_value(Some(7.5), Unit::Ratio, false), "7.5");
-        assert_eq!(format_value(Some(4.2), Unit::Hours, false), "4.2h");
+    fn parse_periods_default_set() {
+        let now = Utc::now();
+        let ws = parse_periods("24h,7d,30d,1y", now).unwrap();
+        assert_eq!(ws.len(), 4);
+        assert_eq!(ws[0].label, "24h");
+        assert_eq!(ws[3].label, "1y");
     }
 
     #[test]
-    fn yyyy_mm_dd_pads_correctly() {
-        let dt = DateTime::parse_from_rfc3339("2026-01-05T00:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        assert_eq!(format_yyyy_mm_dd(&dt), "2026-01-05");
+    fn parse_periods_skips_blanks() {
+        let now = Utc::now();
+        let ws = parse_periods("7d, ,30d", now).unwrap();
+        assert_eq!(ws.len(), 2);
+    }
+
+    #[test]
+    fn parse_periods_rejects_empty() {
+        let now = Utc::now();
+        assert!(parse_periods("", now).is_err());
+    }
+
+    #[test]
+    fn previous_window_is_immediately_preceding() {
+        let now = Utc::now();
+        let cur = window_from_since("7d", now).unwrap();
+        let prev = previous_window_of(&cur);
+        assert_eq!(prev.until, cur.since);
+        assert_eq!(prev.duration(), cur.duration());
+    }
+
+    #[test]
+    fn border_line_lengths_match_widths() {
+        let line = border_line('┌', '┬', '┐', &[6, 4]);
+        // Each column is width+2 dashes, plus the four corners.
+        let dashes = line.chars().filter(|c| *c == '─').count();
+        assert_eq!(dashes, (6 + 2) + (4 + 2));
+        assert!(line.starts_with('┌'));
+        assert!(line.ends_with('┐'));
+        assert!(line.contains('┬'));
     }
 }

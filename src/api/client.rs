@@ -64,7 +64,11 @@ impl DiscourseClient {
 
     pub(crate) fn get(&self, path: &str) -> Result<Response> {
         let url = format!("{}{}", self.baseurl, path);
-        self.client.get(url).send().context("sending request")
+        // Route GETs through `send_retrying` so a 429 response (whether
+        // from Discourse's app-level rate limit or a fronting nginx)
+        // is retried automatically. Crucial for the analytics command
+        // which can fan out tens of GETs back-to-back.
+        self.send_retrying(|| Ok(self.client.get(&url)))
     }
 
     pub(crate) fn post(&self, path: &str) -> Result<reqwest::blocking::RequestBuilder> {

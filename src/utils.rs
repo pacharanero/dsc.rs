@@ -141,9 +141,11 @@ pub fn parse_since_cutoff(input: &str) -> anyhow::Result<chrono::DateTime<chrono
     ))
 }
 
-/// Parse a relative duration like `7d`, `24h`, `30m`, `1w`, `90s`.
-/// Intentionally does not support months/years (imprecise) — use ISO-8601
-/// for those.
+/// Parse a relative duration like `7d`, `24h`, `30m`, `1w`, `90s`, `1y`.
+/// `y` is treated as 365 days (good enough for analytics windows; for
+/// precise calendar arithmetic pass an ISO-8601 timestamp instead).
+/// Months are deliberately not supported because their length depends
+/// on the calendar.
 pub fn parse_relative_duration(input: &str) -> Option<chrono::Duration> {
     let s = input.trim();
     if s.len() < 2 {
@@ -157,6 +159,7 @@ pub fn parse_relative_duration(input: &str) -> Option<chrono::Duration> {
         "h" => Some(chrono::Duration::hours(n)),
         "d" => Some(chrono::Duration::days(n)),
         "w" => Some(chrono::Duration::weeks(n)),
+        "y" => Some(chrono::Duration::days(n * 365)),
         _ => None,
     }
 }
@@ -255,7 +258,19 @@ mod tests {
         assert!(parse_relative_duration("d").is_none());
         assert!(parse_relative_duration("7x").is_none());
         assert!(parse_relative_duration("abc").is_none());
-        assert!(parse_relative_duration("7y").is_none());
+        assert!(parse_relative_duration("3M").is_none()); // months deliberately unsupported
+    }
+
+    #[test]
+    fn parse_relative_duration_accepts_years_as_365d() {
+        assert_eq!(
+            parse_relative_duration("1y"),
+            Some(chrono::Duration::days(365))
+        );
+        assert_eq!(
+            parse_relative_duration("2y"),
+            Some(chrono::Duration::days(730))
+        );
     }
 
     #[test]

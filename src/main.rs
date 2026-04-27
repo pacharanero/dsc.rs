@@ -609,6 +609,8 @@ fn main() -> Result<()> {
             discourse,
             since,
             compare,
+            snapshot,
+            periods,
             section,
             format,
         } => commands::analytics::analytics(
@@ -616,6 +618,8 @@ fn main() -> Result<()> {
             &discourse,
             &since,
             compare,
+            snapshot,
+            periods.as_deref(),
             map_section(section),
             format,
         ),

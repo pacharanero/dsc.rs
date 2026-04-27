@@ -7,21 +7,45 @@ The full design rationale lives in [`spec/analytics.md`](https://github.com/pach
 ## Usage
 
 ```text
-dsc analytics <discourse> [--since <when>] [--compare]
-                          [--section all|growth|activity|health]
-                          [--format text|json|yaml|markdown|markdown-table|csv]
+dsc analytics <discourse>
+              [--since <when>] [--compare]
+              [--snapshot] [--periods 24h,7d,30d,1y]
+              [--section all|growth|activity|health]
+              [--format text|table|json|yaml|markdown|markdown-table|csv]
 ```
 
 Alias: `dsc stats` is accepted as a shorter alias; `analytics` is canonical.
+
+### Modes
+
+The command runs in one of three modes:
+
+- **single window** (default): `--since 30d` — one column of numbers for the requested window.
+- **compare**: `--since 30d --compare` — two columns (current and previous-period-of-equal-length) plus a delta-percent column.
+- **snapshot**: `--snapshot` — N columns (default `24h, 7d, 30d, 1y`) showing each metric across multiple time horizons. Replaces `--since`+`--compare`. Best paired with `--format table`.
 
 ### Flags
 
 | Flag | Default | Notes |
 |------|---------|-------|
-| `--since` / `-s` | `30d` | Window length. Same syntax as `dsc user activity --since` (`24h`, `7d`, `30d`, `1w`, `1m`, ISO-8601 timestamp). |
-| `--compare` / `-c` | off | Also fetch the immediately preceding window of equal length and show a delta. Discourse's report endpoints return both windows in one call, so this doesn't double API traffic. |
-| `--section` | `all` | Restrict output to one section. |
-| `--format` / `-f` | `text` | One of `text`, `json`, `yaml`, `markdown` (`md`), `markdown-table` (`md-table`), `csv`. |
+| `--since` / `-s` | `30d` | Window length. `24h`, `7d`, `30d`, `1w`, `1y`, or an ISO-8601 timestamp. Ignored with `--snapshot`. |
+| `--compare` / `-c` | off | Pair the window with the immediately preceding window of equal length. Mutually exclusive with `--snapshot`. |
+| `--snapshot` | off | Multi-window dashboard mode. Default periods are `24h, 7d, 30d, 1y`. |
+| `--periods` | `24h,7d,30d,1y` | Comma-separated periods for `--snapshot`. Order is preserved in output. Requires `--snapshot`. |
+| `--section` | `all` | Restrict output to one section (`growth`, `activity`, `health`). |
+| `--format` / `-f` | `text` | One of `text`, `table`, `json`, `yaml`, `markdown` (`md`), `markdown-table` (`md-table`), `csv`. |
+
+### Output formats
+
+- **`text`** — fixed-width columns, no borders. The default; always machine-parseable.
+- **`table`** — DuckDB-style box-drawing table with `┌─┬─┐` borders, right-aligned numbers, thousand separators on counts. Falls through to `text` automatically when stdout isn't a TTY (so you don't get borders polluting cron logs).
+- **`json` / `yaml`** — schema-versioned (`"schema": 1`). Stub metrics carry `"not_implemented": true`. Each metric's value column lives under `values: { "<column-header>": <number-or-null> }`, so single/compare/snapshot all share one shape.
+- **`markdown` / `markdown-table`** — pipe straight into `dsc topic reply` for a journal entry.
+- **`csv`** — one row per metric. Columns: `section, metric, <one column per window>, desirable_direction, unit`.
+
+### Latency
+
+Snapshot mode makes ~9 reports × N periods API calls. Calls run through a 4-worker concurrent pool (just below typical nginx burst limits) and the cross-cutting 429 retry kicks in if a forum is sensitive — observed runs against busy forums complete in 5-10 seconds. Single-window remains under one second.
 
 ### Auth
 
@@ -100,8 +124,14 @@ The stubbed metrics are tracked in `.marcus/queries.md` (project-private notes) 
 ## Examples
 
 ```bash
-# Default 30-day window, text mode.
+# Default 30-day window, plain text.
 dsc analytics myforum
+
+# Multi-window snapshot, DuckDB-style table.
+dsc analytics myforum --snapshot --format table
+
+# Custom periods.
+dsc analytics myforum --snapshot --periods 1d,1w,1m,3m,1y --format table
 
 # Week-over-week comparison.
 dsc analytics myforum --since 7d --compare
@@ -113,8 +143,9 @@ dsc analytics myforum --section activity --format markdown
 dsc analytics myforum --since 7d --compare --format markdown \
   | dsc topic reply myforum 4242
 
-# CSV append into a tracking spreadsheet.
-dsc analytics myforum --since 1d --format csv >> ~/dsc-trends/myforum.csv
+# CSV append into a tracking spreadsheet (snapshot mode = one row per metric
+# with one column per period).
+dsc analytics myforum --snapshot --format csv >> ~/dsc-trends/myforum.csv
 ```
 
 ## Output formats

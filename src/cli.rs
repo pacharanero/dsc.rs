@@ -211,17 +211,27 @@ pub enum Commands {
         /// Discourse name.
         discourse: String,
         /// Window to report on. Same syntax as `dsc user activity --since`
-        /// (e.g. `7d`, `24h`, `1m`, ISO-8601). Default: 30d.
+        /// (e.g. `7d`, `24h`, `1m`, ISO-8601). Ignored when `--snapshot`
+        /// is set. Default: 30d.
         #[arg(long, short = 's', default_value = "30d")]
         since: String,
         /// Also fetch the immediately preceding window of equal length and
-        /// show a delta column.
-        #[arg(long, short = 'c')]
+        /// show a delta column. Mutually exclusive with `--snapshot`.
+        #[arg(long, short = 'c', conflicts_with = "snapshot")]
         compare: bool,
+        /// Multi-window snapshot mode. Reports each metric across several
+        /// preset windows (`--periods`) so you see growth/health trends
+        /// at a glance. Replaces `--since` + `--compare`.
+        #[arg(long)]
+        snapshot: bool,
+        /// Comma-separated periods for `--snapshot`. Default: `24h,7d,30d,1y`.
+        #[arg(long, requires = "snapshot")]
+        periods: Option<String>,
         /// Restrict output to one section.
         #[arg(long, value_enum, default_value = "all")]
         section: SectionArg,
-        /// Output format.
+        /// Output format. `table` is DuckDB-style box-drawing; falls
+        /// through to `text` automatically when stdout isn't a TTY.
         #[arg(long, short = 'f', value_enum, default_value = "text")]
         format: AnalyticsFormat,
     },
@@ -943,8 +953,11 @@ pub enum SectionArg {
 
 #[derive(ValueEnum, Clone, Copy)]
 pub enum AnalyticsFormat {
-    /// Plain text (default).
+    /// Plain text (default). Fixed-width columns, no borders.
     Text,
+    /// DuckDB-style box-drawing table. Falls through to `text` when
+    /// stdout isn't a TTY.
+    Table,
     /// Pretty JSON.
     Json,
     /// YAML.
