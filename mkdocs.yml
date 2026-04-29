@@ -6,7 +6,9 @@ repo_name: pacharanero/dsc
 edit_uri: edit/main/docs/
 
 theme:
-  variant: classic
+  variant: modern
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
   features:
     - content.code.copy
     - content.code.annotate
@@ -19,22 +21,27 @@ theme:
     - toc.follow
   # Light/dark palette pair with a toggle in the header. The first entry
   # is the default scheme; clicking the toggle switches to the second
-  # and remembers the choice via localStorage.
+  # and remembers the choice via localStorage. `primary: custom` defers
+  # the actual colour values to docs/stylesheets/extra.css so we can
+  # match the logo's #f15c21 exactly.
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+
+extra_css:
+  - stylesheets/extra.css
 
 nav:
   - Home: index.md

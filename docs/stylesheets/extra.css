@@ -1,0 +1,31 @@
+/*
+ * Custom palette overrides matching the dsc logo.
+ *
+ * The brand orange `#f15c21` is pulled straight from the SVG. Material
+ * computes hover/focus shades from `--md-primary-fg-color` automatically,
+ * but we set the primary, accent, and a couple of derived shades
+ * explicitly so light and dark schemes both feel tonally aligned.
+ */
+
+:root,
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #f15c21;
+  --md-primary-fg-color--light: #f47e4a;
+  --md-primary-fg-color--dark: #c64810;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.7);
+  --md-accent-fg-color: #f15c21;
+  --md-accent-fg-color--transparent: rgba(241, 92, 33, 0.1);
+  --md-accent-bg-color: #ffffff;
+  --md-accent-bg-color--light: rgba(255, 255, 255, 0.7);
+}
+
+[data-md-color-scheme="slate"] {
+  /* Slightly lifted accent in dark mode so contrast against the slate
+   * background stays comfortable. */
+  --md-primary-fg-color: #f15c21;
+  --md-primary-fg-color--light: #f47e4a;
+  --md-primary-fg-color--dark: #c64810;
+  --md-accent-fg-color: #f47e4a;
+  --md-accent-fg-color--transparent: rgba(244, 126, 74, 0.15);
+}
