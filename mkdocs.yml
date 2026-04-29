@@ -14,7 +14,10 @@ theme:
   features:
     - content.code.copy
     - content.code.annotate
-    - navigation.tabs
+    # Drop `navigation.tabs` to move top-level nav from the header tabs
+    # into the left sidebar. `navigation.sections` keeps each top-level
+    # entry rendered as a bold section heading rather than a collapsed
+    # accordion.
     - navigation.sections
     - navigation.top
     - navigation.footer
