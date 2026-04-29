@@ -6,25 +6,59 @@ Most functionality uses the Discourse REST API; `dsc update` runs remote rebuild
 
 ## Install
 
-Pick the one that fits your platform:
+=== "Linux / macOS"
 
-```bash
-# Linux / macOS one-liner
-curl -LsSf https://pacharanero.github.io/dsc/install.sh | sh
+    One-liner shell installer:
 
-# macOS / Linux via Homebrew (formula name matches the crate)
-brew tap pacharanero/tap && brew install dsc-rs
+    ```bash
+    curl -LsSf https://pacharanero.github.io/dsc/install.sh | sh
+    ```
 
-# Windows one-liner (PowerShell)
-powershell -ExecutionPolicy Bypass -c "irm https://pacharanero.github.io/dsc/install.ps1 | iex"
+    Drops a prebuilt binary into `~/.cargo/bin` (or `$CARGO_HOME/bin`).
+    Supports `x86_64` and `aarch64`.
 
-# Or via Cargo if you already have a Rust toolchain
-cargo install dsc-rs
-```
+=== "Homebrew"
 
-Windows users who prefer a GUI installer: download the `.msi` from the [latest release](https://github.com/pacharanero/dsc/releases/latest).
+    Linux or macOS, no Rust toolchain needed:
 
-The crate is named `dsc-rs` (the `dsc` name was taken on crates.io), but the installed binary is always `dsc`. See the [project README](https://github.com/pacharanero/dsc#readme) for more ways in.
+    ```bash
+    brew tap pacharanero/tap
+    brew install dsc-rs
+    ```
+
+    The formula name matches the crate (`dsc-rs`); the installed binary
+    is still `dsc`.
+
+=== "Windows (PowerShell)"
+
+    One-liner:
+
+    ```powershell
+    powershell -ExecutionPolicy Bypass -c "irm https://pacharanero.github.io/dsc/install.ps1 | iex"
+    ```
+
+    Drops `dsc.exe` into `%CARGO_HOME%\bin`.
+
+=== "Windows (MSI)"
+
+    Prefer a graphical installer? Download the `.msi` for
+    `x86_64-pc-windows-msvc` from the
+    [latest release](https://github.com/pacharanero/dsc/releases/latest)
+    and double-click. Unsigned, so SmartScreen will warn the first
+    time — click "More info" → "Run anyway".
+
+=== "Cargo"
+
+    If you already have a Rust toolchain (edition 2024):
+
+    ```bash
+    cargo install dsc-rs
+    ```
+
+The crate is named `dsc-rs` (the `dsc` name on crates.io was taken),
+but the installed binary is always `dsc`. See the
+[project README](https://github.com/pacharanero/dsc#readme) for direct
+download archives and other paths in.
 
 ## A minimal config
 
