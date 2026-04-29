@@ -26,9 +26,6 @@ Most functionality uses the Discourse REST API; `dsc update` runs remote rebuild
     brew install dsc-rs
     ```
 
-    The formula name matches the crate (`dsc-rs`); the installed binary
-    is still `dsc`.
-
 === ":material-microsoft-windows: Windows (PowerShell)"
 
     One-liner:
@@ -55,10 +52,11 @@ Most functionality uses the Discourse REST API; `dsc update` runs remote rebuild
     cargo install dsc-rs
     ```
 
-The crate is named `dsc-rs` (the `dsc` name on crates.io was taken),
-but the installed binary is always `dsc`. See the
-[project README](https://github.com/pacharanero/dsc#readme) for direct
-download archives and other paths in.
+    The crate is named `dsc-rs` (the `dsc` name on crates.io was
+    taken); the installed binary is always `dsc`.
+
+See the [project README](https://github.com/pacharanero/dsc#readme) for
+direct-download archives and other paths in.
 
 ## A minimal config
 
